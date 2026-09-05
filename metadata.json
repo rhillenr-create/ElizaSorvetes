@@ -1,0 +1,6 @@
+{
+  "name": "Eliza Sorvetes",
+  "description": "Sistema de Gestão e Ponto de Venda (PDV) minimalista e intuitivo para a sorveteria Eliza Sorvetes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
