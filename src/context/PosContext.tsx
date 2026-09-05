@@ -24,6 +24,7 @@ interface PosContextType {
     amountReceived?: number,
     customerName?: string
   ) => { success: boolean; sale?: Sale; error?: string };
+  deleteSale: (saleId: string, restoreStock?: boolean) => boolean;
   updateStockQuantity: (stockId: string, newQuantity: number) => void;
   adjustStockQuantity: (stockId: string, delta: number) => void;
   updateStockThreshold: (stockId: string, minQuantity: number) => void;
@@ -256,6 +257,66 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, sale: newSale };
   };
 
+  // Cancel / Delete a sale with optional stock restoration
+  const deleteSale = (saleId: string, restoreStock = true): boolean => {
+    const saleToDelete = sales.find((s) => s.id === saleId);
+    if (!saleToDelete) return false;
+
+    if (restoreStock) {
+      setStock((currentStock) => {
+        const stockMap = new Map<string, StockItem>(currentStock.map((s) => [s.id, { ...s }]));
+        const today = new Date().toISOString().split('T')[0];
+
+        saleToDelete.items.forEach((cartItem) => {
+          // If product is water
+          if (cartItem.productId === 'agua_mineral') {
+            const waterItem = stockMap.get('st_agua_mineral');
+            if (waterItem) {
+              waterItem.quantity += cartItem.quantity;
+              waterItem.updatedAt = today;
+            }
+          } else if (cartItem.productId === 'sundae') {
+            const baseSundae = stockMap.get('st_sundae_base');
+            if (baseSundae) {
+              baseSundae.quantity += cartItem.quantity;
+              baseSundae.updatedAt = today;
+            }
+          }
+
+          // Direct product stock item if exists
+          const directStock = stockMap.get(`st_${cartItem.productId}`);
+          if (directStock && cartItem.productId !== 'agua_mineral') {
+            directStock.quantity += cartItem.quantity;
+            directStock.updatedAt = today;
+          }
+
+          // Restore flavors
+          cartItem.selectedFlavors.forEach((flavorName) => {
+            for (const item of stockMap.values()) {
+              if (
+                item.name.toLowerCase().includes(flavorName.toLowerCase()) ||
+                flavorName.toLowerCase().includes(item.name.toLowerCase().replace('sorvete: ', '').replace('picolé: ', ''))
+              ) {
+                item.quantity += cartItem.quantity;
+                item.updatedAt = today;
+                break;
+              }
+            }
+          });
+        });
+
+        return Array.from(stockMap.values());
+      });
+    }
+
+    setSales((prev) => prev.filter((s) => s.id !== saleId));
+    if (lastCompletedSale?.id === saleId) {
+      setLastCompletedSale(null);
+    }
+
+    return true;
+  };
+
   // Stock adjustment handlers
   const updateStockQuantity = (stockId: string, newQuantity: number) => {
     setStock((prev) =>
@@ -406,6 +467,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cartSubtotal,
         cartTotalCount,
         finalizeSale,
+        deleteSale,
         updateStockQuantity,
         adjustStockQuantity,
         updateStockThreshold,

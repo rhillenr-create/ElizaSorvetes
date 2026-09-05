@@ -15,13 +15,31 @@ import {
   FileText,
   Sparkles,
   Calendar,
-  User
+  User,
+  Trash2,
+  AlertTriangle,
+  CheckCircle2,
+  X
 } from 'lucide-react';
 
 export const ReportsView: React.FC = () => {
-  const { sales, resetAllData } = usePos();
+  const { sales, deleteSale, resetAllData } = usePos();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSaleForView, setSelectedSaleForView] = useState<Sale | null>(null);
+  const [saleToDelete, setSaleToDelete] = useState<Sale | null>(null);
+  const [restoreStockOnDelete, setRestoreStockOnDelete] = useState<boolean>(true);
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+
+  const handleConfirmDelete = () => {
+    if (!saleToDelete) return;
+    const saleId = saleToDelete.id;
+    deleteSale(saleId, restoreStockOnDelete);
+    setSaleToDelete(null);
+    setFeedbackMsg(`A venda ${saleId} foi cancelada com sucesso${restoreStockOnDelete ? ' e os produtos retornaram ao estoque' : ''}!`);
+    setTimeout(() => {
+      setFeedbackMsg((prev) => (prev?.includes(saleId) ? null : prev));
+    }, 5000);
+  };
 
   // Financial Metrics
   const totalRevenue = useMemo(() => {
@@ -125,6 +143,23 @@ export const ReportsView: React.FC = () => {
 
   return (
     <div className="flex-1 max-w-7xl mx-auto w-full p-3 sm:p-6 space-y-5 overflow-y-auto pb-24 sm:pb-6">
+      {/* Feedback Banner */}
+      {feedbackMsg && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-3 rounded-2xl flex items-center justify-between gap-3 shadow-xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-2 text-xs font-semibold">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{feedbackMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedbackMsg(null)}
+            className="text-stone-400 hover:text-stone-700 p-1 rounded-lg cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -357,7 +392,7 @@ export const ReportsView: React.FC = () => {
                 <th className="py-2.5 px-3">Itens e Sabores</th>
                 <th className="py-2.5 px-3">Pagamento</th>
                 <th className="py-2.5 px-3 text-right">Valor Total</th>
-                <th className="py-2.5 px-3 text-center">Recibo</th>
+                <th className="py-2.5 px-3 text-center">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 text-xs text-stone-700">
@@ -420,14 +455,32 @@ export const ReportsView: React.FC = () => {
                       </td>
 
                       <td className="py-3 px-3 text-center">
-                        <button
-                          id={`view-receipt-${sale.id}`}
-                          onClick={() => setSelectedSaleForView(sale)}
-                          className="px-2.5 py-1 rounded-lg border border-stone-200 hover:border-rose-300 hover:bg-rose-50 text-stone-600 hover:text-rose-600 text-xs font-medium inline-flex items-center gap-1 transition-colors cursor-pointer"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Ver</span>
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            id={`view-receipt-${sale.id}`}
+                            onClick={() => setSelectedSaleForView(sale)}
+                            className="px-2.5 py-1.5 rounded-xl border border-stone-200 hover:border-rose-300 hover:bg-rose-50 text-stone-600 hover:text-rose-600 text-xs font-medium inline-flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Visualizar ou imprimir cupom"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Ver</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            id={`cancel-sale-${sale.id}`}
+                            onClick={() => {
+                              setSaleToDelete(sale);
+                              setRestoreStockOnDelete(true);
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl border border-rose-200 hover:border-rose-400 bg-rose-50/80 hover:bg-rose-100 text-rose-700 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Cancelar ou excluir esta venda"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Cancelar</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -443,7 +496,120 @@ export const ReportsView: React.FC = () => {
         <ReceiptModal
           sale={selectedSaleForView}
           onClose={() => setSelectedSaleForView(null)}
+          onSaleCancelled={(cancelledId) => {
+            setSelectedSaleForView(null);
+            setFeedbackMsg(`A venda ${cancelledId} foi cancelada com sucesso e os itens retornaram ao estoque!`);
+            setTimeout(() => setFeedbackMsg(null), 5000);
+          }}
         />
+      )}
+
+      {/* Modal de Confirmação de Cancelamento / Exclusão de Venda */}
+      {saleToDelete && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setSaleToDelete(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-rose-200 overflow-hidden space-y-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-5 bg-rose-50/90 border-b border-rose-100 flex items-start gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-stone-900 text-base font-['Quicksand',sans-serif]">
+                  Cancelar ou Excluir Venda
+                </h3>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Esta ação cancelará a transação e atualizará os relatórios
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSaleToDelete(null)}
+                className="w-8 h-8 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-200/50 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Sale Summary Card */}
+            <div className="p-5 space-y-4">
+              <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200 space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-stone-500">ID da Venda:</span>
+                  <span className="font-mono font-bold text-stone-800">{saleToDelete.id}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-stone-500">Cliente:</span>
+                  <span className="font-semibold text-stone-800">{saleToDelete.customerName || 'Consumidor Final'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-stone-500">Forma de Pagamento:</span>
+                  <span>{getMethodBadge(saleToDelete.paymentMethod)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-stone-200">
+                  <span className="font-bold text-stone-700">Valor Total:</span>
+                  <span className="font-mono font-extrabold text-stone-900 text-base">
+                    R$ {saleToDelete.total.toFixed(2).replace('.', ',')}
+                  </span>
+                </div>
+
+                {/* Items Summary */}
+                <div className="pt-2 border-t border-stone-200/80">
+                  <p className="text-[11px] font-semibold text-stone-600 mb-1">Itens incluídos:</p>
+                  <ul className="space-y-1 text-[11px] text-stone-600">
+                    {saleToDelete.items.map((item, idx) => (
+                      <li key={idx} className="flex justify-between">
+                        <span>{item.quantity}x {item.productName}</span>
+                        <span>R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Checkbox: Retornar ao Estoque */}
+              <label className="flex items-start gap-3 p-3 rounded-2xl border border-stone-200 hover:bg-stone-50 cursor-pointer transition-colors">
+                <input
+                  type="checkbox"
+                  checked={restoreStockOnDelete}
+                  onChange={(e) => setRestoreStockOnDelete(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded text-rose-600 border-stone-300 focus:ring-rose-400 cursor-pointer"
+                />
+                <div className="text-xs">
+                  <p className="font-bold text-stone-800">Devolver produtos ao estoque (+ estoque)</p>
+                  <p className="text-[11px] text-stone-500 mt-0.5">
+                    Reverte a saída dos sabores, picolés ou águas vendidos, somando-os de volta ao estoque atual.
+                  </p>
+                </div>
+              </label>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSaleToDelete(null)}
+                  className="w-full sm:flex-1 py-2.5 px-4 rounded-xl border border-stone-200 bg-white hover:bg-stone-100 text-stone-700 font-semibold text-xs transition-colors cursor-pointer text-center"
+                >
+                  Manter Venda
+                </button>
+                <button
+                  type="button"
+                  id="confirm-delete-sale-modal-btn"
+                  onClick={handleConfirmDelete}
+                  className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer active:scale-[0.99]"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Sim, Cancelar Venda</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

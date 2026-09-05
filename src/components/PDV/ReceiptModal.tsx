@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Sale } from '../../types';
+import { usePos } from '../../context/PosContext';
 import { 
   CheckCircle, 
   Printer, 
@@ -10,20 +11,33 @@ import {
   Download, 
   ExternalLink,
   Info,
-  AlertCircle
+  AlertCircle,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 
 interface ReceiptModalProps {
   sale: Sale | null;
   onClose: () => void;
+  onSaleCancelled?: (saleId: string) => void;
 }
 
-export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
+export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSaleCancelled }) => {
   if (!sale) return null;
 
+  const { deleteSale } = usePos();
   const [copied, setCopied] = useState<boolean>(false);
   const [printStatus, setPrintStatus] = useState<string | null>(null);
   const [showPopupWarning, setShowPopupWarning] = useState<boolean>(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState<boolean>(false);
+
+  const handleConfirmCancelSale = () => {
+    deleteSale(sale.id, true);
+    if (onSaleCancelled) {
+      onSaleCancelled(sale.id);
+    }
+    onClose();
+  };
 
   // Check if app is running inside a preview iframe
   const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
@@ -567,7 +581,52 @@ ${doubleLine}`;
               <Download className="w-3.5 h-3.5" />
               <span>.txt</span>
             </button>
+
+            {/* Cancel / Delete Sale Button */}
+            <button
+              type="button"
+              id="cancel-sale-from-receipt-btn"
+              onClick={() => setShowCancelConfirm(true)}
+              className="py-2 px-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-[11px] font-semibold text-rose-700 flex items-center gap-1 transition-colors cursor-pointer"
+              title="Cancelar ou excluir esta venda e devolver itens ao estoque"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              <span>Cancelar Venda</span>
+            </button>
           </div>
+
+          {/* Inline Cancel Confirmation Box */}
+          {showCancelConfirm && (
+            <div className="mt-3 p-3.5 bg-rose-50 border border-rose-200 rounded-2xl space-y-2.5 animate-in fade-in duration-150">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-rose-950">
+                  <p className="font-bold">Deseja cancelar esta venda ({sale.id})?</p>
+                  <p className="text-[11px] text-rose-700 mt-0.5">
+                    A venda será excluída do faturamento e todos os itens serão devolvidos ao estoque automaticamente.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowCancelConfirm(false)}
+                  className="px-3 py-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 font-medium text-xs cursor-pointer"
+                >
+                  Voltar
+                </button>
+                <button
+                  type="button"
+                  id="confirm-cancel-sale-btn"
+                  onClick={handleConfirmCancelSale}
+                  className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Sim, Cancelar Venda</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Modal Primary Actions */}
