@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isStaff() {
+      return true;
+    }
+
+    // Connection test endpoint
+    match /test/{testId} {
+      allow read: if true;
+    }
+
+    // Product validation helper
+    function isValidProduct(data) {
+      return data.id is string && isValidId(data.id) &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 120 &&
+        data.category is string && (data.category == 'sorvete' || data.category == 'picole' || data.category == 'bebida' || data.category == 'sobremesa') &&
+        data.price is number && data.price >= 0 &&
+        data.description is string && data.description.size() <= 500 &&
+        data.requiresFlavors is bool;
+    }
+
+    // Stock validation helper
+    function isValidStockItem(data) {
+      return data.id is string && isValidId(data.id) &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 120 &&
+        data.category is string && (data.category == 'Sorvete' || data.category == 'Picolé' || data.category == 'Bebida' || data.category == 'Sobremesa') &&
+        data.quantity is number && data.quantity >= 0 &&
+        data.minQuantity is number && data.minQuantity >= 1 &&
+        data.unit is string && data.unit.size() <= 50 &&
+        data.updatedAt is string && data.updatedAt.size() <= 100;
+    }
+
+    // Sale validation helper
+    function isValidSale(data) {
+      return data.id is string && isValidId(data.id) &&
+        data.timestamp is string && data.timestamp.size() <= 100 &&
+        data.items is list && data.items.size() > 0 && data.items.size() <= 100 &&
+        data.subtotal is number && data.subtotal >= 0 &&
+        data.discount is number && data.discount >= 0 &&
+        data.total is number && data.total >= 0 &&
+        data.paymentMethod is string && (data.paymentMethod == 'dinheiro' || data.paymentMethod == 'pix' || data.paymentMethod == 'cartao_debito' || data.paymentMethod == 'cartao_credito');
+    }
+
+    // Products collection
+    match /products/{productId} {
+      allow read: if isStaff();
+      allow create: if isStaff() && isValidId(productId) && productId == incoming().id && isValidProduct(incoming());
+      allow update: if isStaff() && isValidId(productId) && isValidProduct(incoming()) && incoming().id == existing().id;
+      allow delete: if isStaff() && isValidId(productId);
+    }
+
+    // Stock collection
+    match /stock/{stockId} {
+      allow read: if isStaff();
+      allow create: if isStaff() && isValidId(stockId) && stockId == incoming().id && isValidStockItem(incoming());
+      allow update: if isStaff() && isValidId(stockId) && isValidStockItem(incoming()) && incoming().id == existing().id;
+      allow delete: if isStaff() && isValidId(stockId);
+    }
+
+    // Sales collection
+    match /sales/{saleId} {
+      allow read: if isStaff();
+      allow create: if isStaff() && isValidId(saleId) && saleId == incoming().id && isValidSale(incoming());
+      allow update: if isStaff() && isValidId(saleId) && isValidSale(incoming()) && incoming().id == existing().id;
+      allow delete: if isStaff() && isValidId(saleId);
+    }
+  }
+}

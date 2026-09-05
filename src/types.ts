@@ -61,3 +61,12 @@ export interface Sale {
 }
 
 export type NavScreen = 'pdv' | 'produtos' | 'estoque' | 'relatorios';
+
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'local_only' | 'error';
+
+export interface OperatorUser {
+  email: string;
+  name: string;
+  role: 'operator' | 'admin';
+  loggedInAt: string;
+}

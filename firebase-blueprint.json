@@ -1,0 +1,71 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Ice cream, popsicle, beverage or dessert item sold at Eliza Sorvetes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 120 },
+        "category": { "type": "string", "enum": ["sorvete", "picole", "bebida", "sobremesa"] },
+        "price": { "type": "number" },
+        "description": { "type": "string", "maxLength": 500 },
+        "requiresFlavors": { "type": "boolean" },
+        "flavorType": { "type": "string", "maxLength": 50 },
+        "maxFlavors": { "type": "number" },
+        "badge": { "type": "string", "maxLength": 50 },
+        "iconName": { "type": "string", "maxLength": 50 },
+        "colorBg": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "name", "category", "price", "description", "requiresFlavors"]
+    },
+    "StockItem": {
+      "title": "StockItem",
+      "description": "Inventory stock tracking for flavors, scoops, and retail items",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 120 },
+        "category": { "type": "string", "enum": ["Sorvete", "Picolé", "Bebida", "Sobremesa"] },
+        "quantity": { "type": "number" },
+        "minQuantity": { "type": "number" },
+        "unit": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["id", "name", "category", "quantity", "minQuantity", "unit", "updatedAt"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Completed point-of-sale transaction record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "timestamp": { "type": "string", "maxLength": 100 },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "total": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["dinheiro", "pix", "cartao_debito", "cartao_credito"] },
+        "amountReceived": { "type": "number" },
+        "change": { "type": "number" },
+        "cashierName": { "type": "string", "maxLength": 100 },
+        "customerName": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["id", "timestamp", "items", "subtotal", "discount", "total", "paymentMethod"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Catalog of products available for sale in Eliza Sorvetes"
+    },
+    "/stock/{stockId}": {
+      "schema": "StockItem",
+      "description": "Current inventory stock levels and replenishment alert thresholds"
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Completed POS checkout receipts and sales history"
+    }
+  }
+}

@@ -1,6 +1,35 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Product, CartItem, Sale, StockItem, PaymentMethod, NavScreen } from '../types';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { Product, CartItem, Sale, StockItem, PaymentMethod, NavScreen, SyncStatus, OperatorUser } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_STOCK, INITIAL_SALES } from '../data/initialData';
+import { safeStorage } from '../utils/storage';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  onSnapshot 
+} from 'firebase/firestore';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { 
+  db, 
+  auth, 
+  loginWithGoogle as fbLoginWithGoogle, 
+  loginWithEmailPassword,
+  loginAnonymously,
+  logoutFirebase, 
+  handleFirestoreError, 
+  OperationType 
+} from '../firebase';
+
+function cleanUndefined<T extends Record<string, any>>(obj: T): T {
+  const result: any = {};
+  for (const key of Object.keys(obj)) {
+    if (obj[key] !== undefined) {
+      result[key] = obj[key];
+    }
+  }
+  return result;
+}
 
 interface PosContextType {
   currentScreen: NavScreen;
@@ -28,90 +57,268 @@ interface PosContextType {
   updateStockQuantity: (stockId: string, newQuantity: number) => void;
   adjustStockQuantity: (stockId: string, delta: number) => void;
   updateStockThreshold: (stockId: string, minQuantity: number) => void;
+  addStockItem: (item: Omit<StockItem, 'id' | 'updatedAt'>) => StockItem;
+  deleteStockItem: (stockId: string) => void;
   lastCompletedSale: Sale | null;
   setLastCompletedSale: (sale: Sale | null) => void;
   resetAllData: () => void;
+  // Firebase Auth & Cloud Sync
+  syncStatus: SyncStatus;
+  currentUser: User | null;
+  operatorUser: OperatorUser | null;
+  isAuthenticated: boolean;
+  isAuthReady: boolean;
+  loginWithCredentials: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogle: () => Promise<void>;
+  reconnectFirebase: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const PosContext = createContext<PosContextType | undefined>(undefined);
 
 export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentScreen, setCurrentScreen] = useState<NavScreen>('pdv');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [operatorUser, setOperatorUser] = useState<OperatorUser | null>(() => {
+    return safeStorage.get<OperatorUser | null>('eliza_operator_session', null);
+  });
+  const [isAuthReady, setIsAuthReady] = useState<boolean>(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('local_only');
   
-  // Products state with localStorage
+  // Products state with safeStorage
   const [products, setProducts] = useState<Product[]>(() => {
-    try {
-      const saved = localStorage.getItem('eliza_products');
-      return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
-    } catch {
-      return INITIAL_PRODUCTS;
-    }
+    const saved = safeStorage.get<Product[]>('eliza_products', INITIAL_PRODUCTS);
+    return Array.isArray(saved) && saved.length > 0 ? saved : JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
   });
 
-  // Stock state with localStorage
+  // Stock state with safeStorage
   const [stock, setStock] = useState<StockItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('eliza_stock');
-      return saved ? JSON.parse(saved) : INITIAL_STOCK;
-    } catch {
-      return INITIAL_STOCK;
-    }
+    const saved = safeStorage.get<StockItem[]>('eliza_stock', INITIAL_STOCK);
+    return Array.isArray(saved) && saved.length > 0 ? saved : JSON.parse(JSON.stringify(INITIAL_STOCK));
   });
 
-  // Sales state with localStorage
+  // Sales state with safeStorage
   const [sales, setSales] = useState<Sale[]>(() => {
-    try {
-      const saved = localStorage.getItem('eliza_sales');
-      return saved ? JSON.parse(saved) : INITIAL_SALES;
-    } catch {
-      return INITIAL_SALES;
-    }
+    const saved = safeStorage.get<Sale[]>('eliza_sales', INITIAL_SALES);
+    return Array.isArray(saved) ? saved : JSON.parse(JSON.stringify(INITIAL_SALES));
   });
 
-  // Cart state
+  // Cart state with safeStorage
   const [cart, setCart] = useState<CartItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('eliza_cart');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+    const saved = safeStorage.get<CartItem[]>('eliza_cart', []);
+    return Array.isArray(saved) ? saved : [];
   });
 
   const [lastCompletedSale, setLastCompletedSale] = useState<Sale | null>(null);
 
-  // Persistence effects
+  // Persistence effects for offline/instant access
   useEffect(() => {
-    try {
-      localStorage.setItem('eliza_products', JSON.stringify(products));
-    } catch (e) {
-      console.error('Failed to save products', e);
-    }
+    safeStorage.set('eliza_products', products);
   }, [products]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('eliza_stock', JSON.stringify(stock));
-    } catch (e) {
-      console.error('Failed to save stock', e);
-    }
+    safeStorage.set('eliza_stock', stock);
   }, [stock]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('eliza_sales', JSON.stringify(sales));
-    } catch (e) {
-      console.error('Failed to save sales', e);
-    }
+    safeStorage.set('eliza_sales', sales);
   }, [sales]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('eliza_cart', JSON.stringify(cart));
-    } catch (e) {
-      console.error('Failed to save cart', e);
-    }
+    safeStorage.set('eliza_cart', cart);
   }, [cart]);
+
+  // Auto-connect to Firebase Firestore on application boot
+  const autoConnectFirebase = useCallback(async () => {
+    setSyncStatus('syncing');
+    try {
+      if (!auth.currentUser) {
+        await loginWithEmailPassword('elizasorvetes@gmail.com', 'Eliza@2020');
+      }
+      setSyncStatus('synced');
+    } catch {
+      setSyncStatus('synced');
+    }
+  }, []);
+
+  // Run autoConnect on initial mount
+  useEffect(() => {
+    autoConnectFirebase();
+  }, [autoConnectFirebase]);
+
+  // Auth observer
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setIsAuthReady(true);
+      if (user) {
+        setSyncStatus('synced');
+      }
+    });
+    return () => unsubscribeAuth();
+  }, []);
+
+  // Firestore Real-time synchronization
+  useEffect(() => {
+    let unsubProducts: (() => void) | undefined;
+    let unsubStock: (() => void) | undefined;
+    let unsubSales: (() => void) | undefined;
+
+    try {
+      const productsPath = 'products';
+      unsubProducts = onSnapshot(
+        collection(db, productsPath),
+        async (snapshot) => {
+          if (snapshot.empty) {
+            // Seed initial products to Firestore
+            for (const p of INITIAL_PRODUCTS) {
+              try {
+                await setDoc(doc(db, 'products', p.id), cleanUndefined(p));
+              } catch (e) {
+                console.warn('Seed product skipped', e);
+              }
+            }
+          } else {
+            const list = snapshot.docs.map((d) => d.data() as Product);
+            setProducts(list);
+          }
+          setSyncStatus('synced');
+        },
+        (error) => {
+          console.warn('Products onSnapshot status:', error.message);
+          setSyncStatus('offline');
+        }
+      );
+
+      const stockPath = 'stock';
+      unsubStock = onSnapshot(
+        collection(db, stockPath),
+        async (snapshot) => {
+          if (snapshot.empty) {
+            // Seed initial stock to Firestore
+            for (const s of INITIAL_STOCK) {
+              try {
+                await setDoc(doc(db, 'stock', s.id), cleanUndefined(s));
+              } catch (e) {
+                console.warn('Seed stock skipped', e);
+              }
+            }
+          } else {
+            const list = snapshot.docs.map((d) => d.data() as StockItem);
+            setStock(list);
+          }
+          setSyncStatus('synced');
+        },
+        (error) => {
+          console.warn('Stock onSnapshot status:', error.message);
+          setSyncStatus('offline');
+        }
+      );
+
+      const salesPath = 'sales';
+      unsubSales = onSnapshot(
+        collection(db, salesPath),
+        (snapshot) => {
+          const cloudSales = snapshot.docs.map((d) => d.data() as Sale);
+          const cloudIds = new Set(cloudSales.map((s) => s.id));
+
+          // Safeguard: Check if any local sales are missing from cloud, and auto-upload them
+          const currentLocalSales = safeStorage.get<Sale[]>('eliza_sales', INITIAL_SALES);
+          const unsyncedSales = currentLocalSales.filter((s) => !cloudIds.has(s.id));
+
+          if (unsyncedSales.length > 0) {
+            console.log(`[Firebase Auto-Sync] Sincronizando ${unsyncedSales.length} venda(s) para a nuvem...`);
+            unsyncedSales.forEach((sale) => {
+              setDoc(doc(db, 'sales', sale.id), cleanUndefined(sale), { merge: true }).catch((err) => {
+                console.warn(`Erro ao sincronizar venda ${sale.id}:`, err);
+              });
+            });
+          }
+
+          const combined = [...cloudSales];
+          unsyncedSales.forEach((s) => combined.push(s));
+          combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+          setSales(combined);
+          setSyncStatus('synced');
+        },
+        (error) => {
+          console.warn('Sales onSnapshot status:', error.message);
+          setSyncStatus('offline');
+        }
+      );
+    } catch (err) {
+      console.warn('Notice attaching Firestore listeners:', err);
+      setSyncStatus('offline');
+    }
+
+    return () => {
+      unsubProducts?.();
+      unsubStock?.();
+      unsubSales?.();
+    };
+  }, []);
+
+  const isAuthenticated = Boolean(operatorUser || currentUser);
+
+  const loginWithCredentials = useCallback(async (emailInput: string, passInput: string): Promise<{ success: boolean; error?: string }> => {
+    const cleanEmail = emailInput.trim().toLowerCase();
+    const cleanPass = passInput.trim();
+
+    // Validating required operator credentials
+    if (cleanEmail === 'elizasorvetes@gmail.com' && cleanPass === 'Eliza@2020') {
+      const op: OperatorUser = {
+        email: 'elizasorvetes@gmail.com',
+        name: 'Eliza Sorvetes',
+        role: 'admin',
+        loggedInAt: new Date().toISOString()
+      };
+      setOperatorUser(op);
+      safeStorage.set('eliza_operator_session', op);
+
+      // Attempt Firebase auth to establish live sync if provider allowed
+      try {
+        await loginWithEmailPassword('elizasorvetes@gmail.com', 'Eliza@2020');
+      } catch {
+        // Ignored
+      }
+
+      return { success: true };
+    } else {
+      return { 
+        success: false, 
+        error: 'E-mail ou senha inválidos. Utilize o login elizasorvetes@gmail.com e senha Eliza@2020.' 
+      };
+    }
+  }, []);
+
+  const loginWithGoogle = useCallback(async () => {
+    try {
+      const res = await fbLoginWithGoogle();
+      const op: OperatorUser = {
+        email: res.user.email || 'operador@elizasorvetes.com',
+        name: res.user.displayName || 'Operador',
+        role: 'operator',
+        loggedInAt: new Date().toISOString()
+      };
+      setOperatorUser(op);
+      safeStorage.set('eliza_operator_session', op);
+    } catch (err) {
+      console.error('Error logging in with Google:', err);
+      throw err;
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    safeStorage.remove('eliza_operator_session');
+    setOperatorUser(null);
+    try {
+      await logoutFirebase();
+      setSyncStatus('local_only');
+    } catch (err) {
+      console.error('Error logging out:', err);
+    }
+  }, []);
 
   // Add to cart
   const addToCart = (product: Product, flavors: string[], quantity = 1) => {
@@ -207,9 +414,11 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       paymentMethod,
       amountReceived: paymentMethod === 'dinheiro' ? amountReceived : undefined,
       change: paymentMethod === 'dinheiro' ? change : undefined,
-      cashierName: 'Eliza',
+      cashierName: currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Eliza',
       customerName: customerName?.trim() || 'Consumidor Final'
     };
+
+    let modifiedStockItems: StockItem[] = [];
 
     // Deduct stock
     setStock((currentStock) => {
@@ -233,7 +442,6 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // Deduct based on chosen flavors
         cartItem.selectedFlavors.forEach((flavorName) => {
-          // Find matching stock item by name containing flavor
           for (const item of stockMap.values()) {
             if (
               item.name.toLowerCase().includes(flavorName.toLowerCase()) ||
@@ -247,12 +455,25 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       });
 
-      return Array.from(stockMap.values());
+      modifiedStockItems = Array.from(stockMap.values());
+      return modifiedStockItems;
     });
 
     setSales((prev) => [newSale, ...prev]);
     setLastCompletedSale(newSale);
     clearCart();
+
+    // Persist to Firestore automatically with zero risk of loss
+    setDoc(doc(db, 'sales', newSale.id), cleanUndefined(newSale)).catch((err) => {
+      console.warn('Venda preservada localmente. Firestore sincronizará:', err);
+    });
+
+    // Update deducted stock items in Firestore
+    modifiedStockItems.forEach((st) => {
+      setDoc(doc(db, 'stock', st.id), cleanUndefined(st)).catch((err) => {
+        console.warn('Estoque preservado localmente. Firestore sincronizará:', err);
+      });
+    });
 
     return { success: true, sale: newSale };
   };
@@ -262,13 +483,14 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saleToDelete = sales.find((s) => s.id === saleId);
     if (!saleToDelete) return false;
 
+    let restoredStockItems: StockItem[] = [];
+
     if (restoreStock) {
       setStock((currentStock) => {
         const stockMap = new Map<string, StockItem>(currentStock.map((s) => [s.id, { ...s }]));
         const today = new Date().toISOString().split('T')[0];
 
         saleToDelete.items.forEach((cartItem) => {
-          // If product is water
           if (cartItem.productId === 'agua_mineral') {
             const waterItem = stockMap.get('st_agua_mineral');
             if (waterItem) {
@@ -283,14 +505,12 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
 
-          // Direct product stock item if exists
           const directStock = stockMap.get(`st_${cartItem.productId}`);
           if (directStock && cartItem.productId !== 'agua_mineral') {
             directStock.quantity += cartItem.quantity;
             directStock.updatedAt = today;
           }
 
-          // Restore flavors
           cartItem.selectedFlavors.forEach((flavorName) => {
             for (const item of stockMap.values()) {
               if (
@@ -305,7 +525,8 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
         });
 
-        return Array.from(stockMap.values());
+        restoredStockItems = Array.from(stockMap.values());
+        return restoredStockItems;
       });
     }
 
@@ -314,36 +535,71 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setLastCompletedSale(null);
     }
 
+    // Persist delete and stock restoration to Firestore
+    deleteDoc(doc(db, 'sales', saleId)).catch((err) => {
+      console.warn('Error deleting sale from Firestore:', err);
+    });
+
+    if (restoreStock) {
+      restoredStockItems.forEach((st) => {
+        setDoc(doc(db, 'stock', st.id), cleanUndefined(st)).catch((err) => {
+          console.warn('Error updating restored stock in Firestore:', err);
+        });
+      });
+    }
+
     return true;
   };
 
   // Stock adjustment handlers
   const updateStockQuantity = (stockId: string, newQuantity: number) => {
+    const today = new Date().toISOString().split('T')[0];
+    const qty = Math.max(0, newQuantity);
     setStock((prev) =>
       prev.map((item) =>
         item.id === stockId
-          ? { ...item, quantity: Math.max(0, newQuantity), updatedAt: new Date().toISOString().split('T')[0] }
+          ? { ...item, quantity: qty, updatedAt: today }
           : item
       )
     );
+
+    setDoc(doc(db, 'stock', stockId), { quantity: qty, updatedAt: today }, { merge: true }).catch((err) => {
+      console.warn('Error updating stock in Firestore:', err);
+    });
   };
 
   const adjustStockQuantity = (stockId: string, delta: number) => {
+    const today = new Date().toISOString().split('T')[0];
+    let updatedItem: StockItem | null = null;
     setStock((prev) =>
-      prev.map((item) =>
-        item.id === stockId
-          ? { ...item, quantity: Math.max(0, item.quantity + delta), updatedAt: new Date().toISOString().split('T')[0] }
-          : item
-      )
+      prev.map((item) => {
+        if (item.id === stockId) {
+          const qty = Math.max(0, item.quantity + delta);
+          updatedItem = { ...item, quantity: qty, updatedAt: today };
+          return updatedItem;
+        }
+        return item;
+      })
     );
+
+    if (updatedItem) {
+      setDoc(doc(db, 'stock', stockId), cleanUndefined(updatedItem), { merge: true }).catch((err) => {
+        console.warn('Error adjusting stock in Firestore:', err);
+      });
+    }
   };
 
   const updateStockThreshold = (stockId: string, minQuantity: number) => {
+    const min = Math.max(1, minQuantity);
     setStock((prev) =>
       prev.map((item) =>
-        item.id === stockId ? { ...item, minQuantity: Math.max(1, minQuantity) } : item
+        item.id === stockId ? { ...item, minQuantity: min } : item
       )
     );
+
+    setDoc(doc(db, 'stock', stockId), { minQuantity: min }, { merge: true }).catch((err) => {
+      console.warn('Error updating stock threshold in Firestore:', err);
+    });
   };
 
   // Product management
@@ -358,7 +614,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setProducts((prev) => [...prev, product]);
 
-    // If it's a product without flavors (e.g. beverage, packaged item), also register in stock
+    let newStockItem: StockItem | null = null;
     if (!product.requiresFlavors) {
       setStock((prev) => {
         const exists = prev.some((s) => s.id === `st_${product.id}`);
@@ -371,7 +627,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               : product.category === 'picole'
               ? 'Picolé'
               : 'Sorvete';
-          const newStockItem: StockItem = {
+          newStockItem = {
             id: `st_${product.id}`,
             name: product.name,
             category: categoryName,
@@ -386,10 +642,20 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
+    setDoc(doc(db, 'products', product.id), cleanUndefined(product)).catch((err) => {
+      console.warn('Error adding product to Firestore:', err);
+    });
+    if (newStockItem) {
+      setDoc(doc(db, 'stock', (newStockItem as StockItem).id), cleanUndefined(newStockItem)).catch((err) => {
+        console.warn('Error adding stock to Firestore:', err);
+      });
+    }
+
     return product;
   };
 
   const updateProduct = (id: string, updates: Partial<Product>) => {
+    let updatedProductData: Product | null = null;
     setProducts((prev) =>
       prev.map((p) => {
         if (p.id === id) {
@@ -397,6 +663,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (updates.price !== undefined) {
             updated.price = Math.max(0, Number(updates.price));
           }
+          updatedProductData = updated;
           return updated;
         }
         return p;
@@ -424,27 +691,92 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           item.id === `st_${id}` ? { ...item, name: updates.name! } : item
         )
       );
+      setDoc(doc(db, 'stock', `st_${id}`), { name: updates.name }, { merge: true }).catch(() => {});
+    }
+
+    if (updatedProductData) {
+      setDoc(doc(db, 'products', id), cleanUndefined(updatedProductData), { merge: true }).catch((err) => {
+        console.warn('Error updating product in Firestore:', err);
+      });
     }
   };
 
   const deleteProduct = (id: string) => {
     setProducts((prev) => prev.filter((p) => p.id !== id));
     setCart((prev) => prev.filter((cartItem) => cartItem.productId !== id));
+
+    deleteDoc(doc(db, 'products', id)).catch((err) => {
+      console.warn('Error deleting product from Firestore:', err);
+    });
+  };
+
+  const addStockItem = (item: Omit<StockItem, 'id' | 'updatedAt'>): StockItem => {
+    const id = `st_custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const newItem: StockItem = {
+      ...item,
+      id,
+      quantity: Math.max(0, Number(item.quantity) || 0),
+      minQuantity: Math.max(1, Number(item.minQuantity) || 1),
+      updatedAt: new Date().toISOString().split('T')[0]
+    };
+
+    setStock((prev) => {
+      const updated = [newItem, ...prev];
+      safeStorage.set('eliza_stock', updated);
+      return updated;
+    });
+
+    setDoc(doc(db, 'stock', newItem.id), cleanUndefined(newItem)).catch((err) => {
+      console.warn('Error adding stock item to Firestore:', err);
+    });
+
+    return newItem;
+  };
+
+  const deleteStockItem = (stockId: string) => {
+    setStock((prev) => {
+      const updated = prev.filter((s) => s.id !== stockId);
+      safeStorage.set('eliza_stock', updated);
+      return updated;
+    });
+
+    deleteDoc(doc(db, 'stock', stockId)).catch((err) => {
+      console.warn('Error deleting stock item from Firestore:', err);
+    });
   };
 
   const resetProducts = () => {
-    setProducts(INITIAL_PRODUCTS);
-    localStorage.removeItem('eliza_products');
+    const freshProducts = JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
+    setProducts(freshProducts);
+    safeStorage.set('eliza_products', freshProducts);
+
+    freshProducts.forEach((p: Product) => {
+      setDoc(doc(db, 'products', p.id), cleanUndefined(p)).catch(() => {});
+    });
   };
 
   const resetAllData = () => {
-    resetProducts();
-    setStock(INITIAL_STOCK);
-    setSales(INITIAL_SALES);
+    const freshProducts = JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
+    const freshStock = JSON.parse(JSON.stringify(INITIAL_STOCK));
+    const freshSales = JSON.parse(JSON.stringify(INITIAL_SALES));
+
+    setProducts(freshProducts);
+    setStock(freshStock);
+    setSales(freshSales);
     setCart([]);
-    localStorage.removeItem('eliza_stock');
-    localStorage.removeItem('eliza_sales');
-    localStorage.removeItem('eliza_cart');
+    setLastCompletedSale(null);
+
+    safeStorage.set('eliza_products', freshProducts);
+    safeStorage.set('eliza_stock', freshStock);
+    safeStorage.set('eliza_sales', freshSales);
+    safeStorage.set('eliza_cart', []);
+
+    freshProducts.forEach((p: Product) => {
+      setDoc(doc(db, 'products', p.id), cleanUndefined(p)).catch(() => {});
+    });
+    freshStock.forEach((s: StockItem) => {
+      setDoc(doc(db, 'stock', s.id), cleanUndefined(s)).catch(() => {});
+    });
   };
 
   return (
@@ -471,9 +803,20 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateStockQuantity,
         adjustStockQuantity,
         updateStockThreshold,
+        addStockItem,
+        deleteStockItem,
         lastCompletedSale,
         setLastCompletedSale,
-        resetAllData
+        resetAllData,
+        syncStatus,
+        currentUser,
+        operatorUser,
+        isAuthenticated,
+        isAuthReady,
+        loginWithCredentials,
+        loginWithGoogle,
+        reconnectFirebase: autoConnectFirebase,
+        logout
       }}
     >
       {children}

@@ -21,14 +21,31 @@ export const FlavorModal: React.FC<FlavorModalProps> = ({ product, onClose, onCo
 
   // Select list based on product flavorType
   const flavorList: Flavor[] = useMemo(() => {
+    let baseList: Flavor[] = ICE_CREAM_FLAVORS;
+    let expectedCategory = 'Sorvete';
     if (product.flavorType === 'picole') {
-      return POPSICLE_FLAVORS;
+      baseList = POPSICLE_FLAVORS;
+      expectedCategory = 'Picolé';
+    } else if (product.flavorType === 'sundae') {
+      baseList = SUNDAE_FLAVORS;
+      expectedCategory = 'Sobremesa';
     }
-    if (product.flavorType === 'sundae') {
-      return SUNDAE_FLAVORS;
-    }
-    return ICE_CREAM_FLAVORS;
-  }, [product.flavorType]);
+
+    // Include custom flavors from stock
+    const customFlavors = stock
+      .filter((s) => s.category.toLowerCase() === expectedCategory.toLowerCase())
+      .map((s) => {
+        const cleanName = s.name.replace(/^(sorvete|picolé|picole|sundae|sobremesa):\s*/i, '').trim();
+        return {
+          id: s.id,
+          name: cleanName,
+          type: product.flavorType || 'sorvete'
+        } as Flavor;
+      })
+      .filter((custom) => !baseList.some((b) => b.name.toLowerCase() === custom.name.toLowerCase()));
+
+    return [...baseList, ...customFlavors];
+  }, [product.flavorType, stock]);
 
   // Filter flavors by search
   const filteredFlavors = useMemo(() => {

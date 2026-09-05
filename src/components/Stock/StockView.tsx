@@ -16,11 +16,20 @@ import {
 } from 'lucide-react';
 
 export const StockView: React.FC = () => {
-  const { stock, updateStockQuantity, adjustStockQuantity, updateStockThreshold } = usePos();
+  const { stock, updateStockQuantity, adjustStockQuantity, updateStockThreshold, addStockItem } = usePos();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
   const [filterLowStockOnly, setFilterLowStockOnly] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<StockItem | null>(null);
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+
+  // Add item modal state
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemCategory, setNewItemCategory] = useState<'Sorvete' | 'Picolé' | 'Bebida' | 'Sobremesa'>('Sorvete');
+  const [newItemQty, setNewItemQty] = useState(25);
+  const [newItemMinQty, setNewItemMinQty] = useState(8);
+  const [newItemUnit, setNewItemUnit] = useState('bolas');
 
   // Edit modal state
   const [editQty, setEditQty] = useState<number>(0);
@@ -53,7 +62,39 @@ export const StockView: React.FC = () => {
     if (!editingItem) return;
     updateStockQuantity(editingItem.id, editQty);
     updateStockThreshold(editingItem.id, editMinQty);
+    const itemName = editingItem.name;
     setEditingItem(null);
+    setFeedbackMsg(`Estoque de "${itemName}" salvo com sucesso (${editQty} ${editingItem.unit})!`);
+    setTimeout(() => {
+      setFeedbackMsg(null);
+    }, 4000);
+  };
+
+  const handleCreateStockItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newItemName.trim()) return;
+
+    let finalName = newItemName.trim();
+    if (newItemCategory === 'Sorvete' && !finalName.toLowerCase().startsWith('sorvete:')) {
+      finalName = `Sorvete: ${finalName}`;
+    } else if (newItemCategory === 'Picolé' && !finalName.toLowerCase().startsWith('picolé:') && !finalName.toLowerCase().startsWith('picole:')) {
+      finalName = `Picolé: ${finalName}`;
+    }
+
+    addStockItem({
+      name: finalName,
+      category: newItemCategory,
+      quantity: Math.max(0, newItemQty),
+      minQuantity: Math.max(1, newItemMinQty),
+      unit: newItemUnit
+    });
+
+    setIsAddModalOpen(false);
+    setNewItemName('');
+    setFeedbackMsg(`Item "${finalName}" adicionado e salvo no estoque com sucesso!`);
+    setTimeout(() => {
+      setFeedbackMsg(null);
+    }, 5000);
   };
 
   return (
@@ -69,8 +110,8 @@ export const StockView: React.FC = () => {
           </p>
         </div>
 
-        {/* Metric Badges */}
-        <div className="flex items-center gap-2">
+        {/* Metric Badges and Actions */}
+        <div className="flex flex-wrap items-center gap-2">
           <div className="px-3.5 py-2 rounded-2xl bg-white border border-stone-200/80 shadow-2xs flex items-center gap-2">
             <Package className="w-4 h-4 text-stone-500" />
             <div className="text-xs">
@@ -96,8 +137,25 @@ export const StockView: React.FC = () => {
               <span className="font-bold">{lowStockItems.length} itens em alerta</span>
             </div>
           </button>
+
+          <button
+            id="open-add-stock-modal-btn"
+            onClick={() => setIsAddModalOpen(true)}
+            className="px-4 py-2 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer select-none ml-auto sm:ml-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Novo Item / Sabor</span>
+          </button>
         </div>
       </div>
+
+      {/* Persistent Feedback Notification Banner */}
+      {feedbackMsg && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-2.5 text-xs sm:text-sm text-emerald-800 animate-in fade-in slide-in-from-top-2 duration-200 shadow-xs">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span className="font-medium">{feedbackMsg}</span>
+        </div>
+      )}
 
       {/* Banner alert if low stock items exist */}
       {lowStockItems.length > 0 && !filterLowStockOnly && (
@@ -387,6 +445,131 @@ export const StockView: React.FC = () => {
                 <span>Salvar Alterações</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Add New Stock Item Modal */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-stone-900/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div 
+            className="bg-white w-full max-w-md rounded-3xl p-5 sm:p-6 shadow-2xl border border-rose-100 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
+                  <Plus className="w-4 h-4" />
+                </div>
+                <h3 className="font-bold text-stone-800 text-base font-['Quicksand',sans-serif]">
+                  Adicionar Item ao Estoque
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsAddModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-500 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateStockItem} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Nome do Produto ou Sabor:
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Sorvete: Pistache, Picolé: Coco, Refrigerante Lata"
+                  value={newItemName}
+                  onChange={(e) => setNewItemName(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm bg-stone-50 border border-stone-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400 focus:bg-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    Categoria:
+                  </label>
+                  <select
+                    value={newItemCategory}
+                    onChange={(e) => {
+                      const cat = e.target.value as 'Sorvete' | 'Picolé' | 'Bebida' | 'Sobremesa';
+                      setNewItemCategory(cat);
+                      if (cat === 'Sorvete') setNewItemUnit('bolas');
+                      else if (cat === 'Picolé' || cat === 'Bebida') setNewItemUnit('unidades');
+                      else setNewItemUnit('porções');
+                    }}
+                    className="w-full px-3 py-2 text-xs bg-stone-50 border border-stone-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400 font-medium"
+                  >
+                    <option value="Sorvete">Sorvete</option>
+                    <option value="Picolé">Picolé</option>
+                    <option value="Bebida">Bebida</option>
+                    <option value="Sobremesa">Sobremesa</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    Unidade de Medida:
+                  </label>
+                  <input
+                    type="text"
+                    value={newItemUnit}
+                    onChange={(e) => setNewItemUnit(e.target.value)}
+                    placeholder="bolas, unidades, etc."
+                    className="w-full px-3 py-2 text-xs bg-stone-50 border border-stone-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    Qtd. Inicial:
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newItemQty}
+                    onChange={(e) => setNewItemQty(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full px-3 py-2 text-sm font-mono font-bold bg-stone-50 border border-stone-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    Qtd. Mínima (Alerta):
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newItemMinQty}
+                    onChange={(e) => setNewItemMinQty(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full px-3 py-2 text-sm font-mono font-bold bg-stone-50 border border-stone-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-100 text-xs font-medium cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  id="confirm-add-stock-btn"
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Cadastrar no Estoque</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

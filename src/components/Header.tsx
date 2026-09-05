@@ -9,12 +9,28 @@ import {
   CheckCircle2, 
   Sparkles,
   AlertTriangle,
-  Tag
+  Tag,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  LogOut,
+  Database
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { currentScreen, setCurrentScreen, stock, cartTotalCount } = usePos();
+  const { 
+    currentScreen, 
+    setCurrentScreen, 
+    stock, 
+    cartTotalCount,
+    currentUser,
+    operatorUser,
+    syncStatus,
+    reconnectFirebase,
+    logout
+  } = usePos();
   const [time, setTime] = useState<string>('');
+  const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
 
   useEffect(() => {
     const updateTime = () => {
@@ -27,10 +43,30 @@ export const Header: React.FC = () => {
         })
       );
     };
+
     updateTime();
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleReconnect = async () => {
+    try {
+      setIsReconnecting(true);
+      await reconnectFirebase();
+    } catch (e) {
+      console.error('Reconnect failed:', e);
+    } finally {
+      setIsReconnecting(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (e) {
+      console.error('Logout failed:', e);
+    }
+  };
 
   const lowStockCount = stock.filter((s) => s.quantity <= s.minQuantity).length;
 
@@ -126,16 +162,84 @@ export const Header: React.FC = () => {
           </nav>
 
           {/* Header Right Status Indicator */}
-          <div className="flex items-center gap-2 text-xs text-stone-600">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-stone-600">
+            {/* Operator info badge */}
+            <div 
+              id="operator-status-badge"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-100/90 border border-stone-200/80 text-[11px] text-stone-700 font-medium"
+              title={`Operador logado: ${operatorUser?.email || currentUser?.email || 'elizasorvetes@gmail.com'}`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="max-w-[110px] truncate font-semibold">
+                {operatorUser?.name || currentUser?.displayName || 'Eliza Sorvetes'}
+              </span>
+            </div>
+
+            {/* Firebase Cloud Sync Status */}
+            <div 
+              id="firebase-cloud-status"
+              title={
+                syncStatus === 'synced'
+                  ? 'Firebase Firestore conectado automaticamente. Vendas salvas em tempo real com segurança total.'
+                  : syncStatus === 'syncing'
+                  ? 'Sincronizando dados com o Firebase Firestore...'
+                  : 'Modo offline com persistência local ativa. Clique para reconectar à nuvem.'
+              }
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-medium border transition-all ${
+                syncStatus === 'synced'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80 shadow-xs'
+                  : syncStatus === 'syncing'
+                  ? 'bg-sky-50 text-sky-800 border-sky-200/80'
+                  : 'bg-amber-50 text-amber-800 border-amber-200/80'
+              }`}
+            >
+              {syncStatus === 'syncing' || isReconnecting ? (
+                <RefreshCw className="w-3 h-3 text-sky-600 animate-spin" />
+              ) : syncStatus === 'synced' ? (
+                <Cloud className="w-3 h-3 text-emerald-600" />
+              ) : (
+                <CloudOff className="w-3 h-3 text-amber-600" />
+              )}
+              <span className="hidden md:inline">
+                {syncStatus === 'synced'
+                  ? 'Firebase Conectado'
+                  : syncStatus === 'syncing' || isReconnecting
+                  ? 'Sincronizando Nuvem'
+                  : 'Offline'}
+              </span>
+              {syncStatus !== 'synced' && (
+                <button
+                  type="button"
+                  id="btn-reconnect-cloud"
+                  onClick={handleReconnect}
+                  disabled={isReconnecting}
+                  className="ml-1 px-1.5 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] font-semibold cursor-pointer"
+                >
+                  Reconectar
+                </button>
+              )}
+            </div>
+
             <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 text-[11px] sm:text-xs">
               <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600" />
               <span className="font-semibold sm:font-medium">Aberto</span>
             </div>
 
-            <div className="hidden md:flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/80 border border-rose-100/80 font-mono text-stone-600">
+            <div className="hidden lg:flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/80 border border-rose-100/80 font-mono text-stone-600">
               <Clock className="w-3.5 h-3.5 text-stone-400" />
               <span>{time || '--:--:--'}</span>
             </div>
+
+            {/* Logout Button */}
+            <button
+              id="btn-app-logout"
+              onClick={handleLogout}
+              title="Encerrar sessão do operador e bloquear caixa"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/80 text-[11px] font-medium transition-colors cursor-pointer active:scale-95"
+            >
+              <LogOut className="w-3 h-3" />
+              <span className="hidden sm:inline">Sair</span>
+            </button>
           </div>
         </div>
       </header>

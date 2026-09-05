@@ -29,6 +29,16 @@ export const ReportsView: React.FC = () => {
   const [saleToDelete, setSaleToDelete] = useState<Sale | null>(null);
   const [restoreStockOnDelete, setRestoreStockOnDelete] = useState<boolean>(true);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState<boolean>(false);
+
+  const handleConfirmResetDemo = () => {
+    resetAllData();
+    setResetConfirmOpen(false);
+    setFeedbackMsg('Dados de demonstração restaurados com sucesso! Cardápio, estoque e vendas foram redefinidos para os valores padrão.');
+    setTimeout(() => {
+      setFeedbackMsg(null);
+    }, 6000);
+  };
 
   const handleConfirmDelete = () => {
     if (!saleToDelete) return;
@@ -173,11 +183,7 @@ export const ReportsView: React.FC = () => {
 
         <button
           id="reset-demo-btn"
-          onClick={() => {
-            if (window.confirm('Deseja restaurar os dados de demonstração do sistema?')) {
-              resetAllData();
-            }
-          }}
+          onClick={() => setResetConfirmOpen(true)}
           className="self-start sm:self-auto px-3.5 py-2 rounded-2xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
         >
           <RotateCcw className="w-3.5 h-3.5" />
@@ -607,6 +613,50 @@ export const ReportsView: React.FC = () => {
                   <span>Sim, Cancelar Venda</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Confirm Reset Demo Data Modal */}
+      {resetConfirmOpen && (
+        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-rose-100 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-stone-800 font-['Quicksand',sans-serif]">
+                  Restaurar Dados de Demonstração?
+                </h3>
+                <p className="text-xs text-stone-500">
+                  Redefinir todo o sistema para o estado padrão
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs sm:text-sm text-stone-600 leading-relaxed bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200/60">
+              Esta ação irá restaurar os <strong>produtos padrão</strong>, o <strong>estoque completo balanceado</strong> e as <strong>vendas de exemplo</strong> da Eliza Sorvetes. Quaisquer dados ou alterações que você salvou serão redefinidos para a demonstração original.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                id="cancel-reset-demo-btn"
+                onClick={() => setResetConfirmOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-100 text-xs font-medium transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                id="confirm-reset-demo-btn"
+                onClick={handleConfirmResetDemo}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Sim, Restaurar Demonstração</span>
+              </button>
             </div>
           </div>
         </div>

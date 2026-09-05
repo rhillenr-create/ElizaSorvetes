@@ -27,6 +27,7 @@ export const ProductsView: React.FC = () => {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [inlineEditingPriceId, setInlineEditingPriceId] = useState<string | null>(null);
   const [tempPriceInput, setTempPriceInput] = useState<string>('');
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
   const categories = [
     { id: 'todos', label: 'Todos os Itens' },
@@ -71,14 +72,19 @@ export const ProductsView: React.FC = () => {
 
   const handleConfirmDelete = () => {
     if (productToDelete) {
+      const name = productToDelete.name;
       deleteProduct(productToDelete.id);
       setProductToDelete(null);
+      setFeedbackMsg(`Produto "${name}" removido com sucesso.`);
+      setTimeout(() => setFeedbackMsg(null), 4000);
     }
   };
 
   const handleQuickPriceChange = (product: Product, delta: number) => {
     const newPrice = Math.max(0.5, Math.round((product.price + delta) * 100) / 100);
     updateProduct(product.id, { price: newPrice });
+    setFeedbackMsg(`Preço de "${product.name}" alterado para R$ ${newPrice.toFixed(2).replace('.', ',')}.`);
+    setTimeout(() => setFeedbackMsg(null), 3500);
   };
 
   const handleStartInlinePrice = (product: Product) => {
@@ -89,7 +95,10 @@ export const ProductsView: React.FC = () => {
   const handleSaveInlinePrice = (product: Product) => {
     const val = parseFloat(tempPriceInput.replace(',', '.'));
     if (!isNaN(val) && val >= 0) {
-      updateProduct(product.id, { price: Math.round(val * 100) / 100 });
+      const newPrice = Math.round(val * 100) / 100;
+      updateProduct(product.id, { price: newPrice });
+      setFeedbackMsg(`Preço de "${product.name}" salvo como R$ ${newPrice.toFixed(2).replace('.', ',')}.`);
+      setTimeout(() => setFeedbackMsg(null), 3500);
     }
     setInlineEditingPriceId(null);
   };
@@ -145,6 +154,14 @@ export const ProductsView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Feedback Notification Banner */}
+      {feedbackMsg && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-2.5 text-xs sm:text-sm text-emerald-800 animate-in fade-in slide-in-from-top-2 duration-200 shadow-xs">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span className="font-medium">{feedbackMsg}</span>
+        </div>
+      )}
 
       {/* Metrics Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -448,6 +465,8 @@ export const ProductsView: React.FC = () => {
                 onClick={() => {
                   resetProducts();
                   setResetConfirmOpen(false);
+                  setFeedbackMsg('Cardápio padrão da Eliza Sorvetes restaurado com sucesso!');
+                  setTimeout(() => setFeedbackMsg(null), 5000);
                 }}
                 className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs cursor-pointer"
               >
@@ -466,6 +485,10 @@ export const ProductsView: React.FC = () => {
           setEditingProduct(null);
         }}
         productToEdit={editingProduct}
+        onSaved={(name, isNew) => {
+          setFeedbackMsg(isNew ? `Produto "${name}" cadastrado com sucesso no cardápio!` : `Produto "${name}" atualizado com sucesso!`);
+          setTimeout(() => setFeedbackMsg(null), 4000);
+        }}
       />
     </div>
   );

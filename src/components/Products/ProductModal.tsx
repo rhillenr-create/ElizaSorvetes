@@ -7,6 +7,7 @@ interface ProductModalProps {
   isOpen: boolean;
   onClose: () => void;
   productToEdit?: Product | null;
+  onSaved?: (productName: string, isNew: boolean) => void;
 }
 
 const COLOR_PRESETS = [
@@ -23,7 +24,8 @@ const COLOR_PRESETS = [
 export const ProductModal: React.FC<ProductModalProps> = ({
   isOpen,
   onClose,
-  productToEdit
+  productToEdit,
+  onSaved
 }) => {
   const { addProduct, updateProduct } = usePos();
 
@@ -93,8 +95,10 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
     if (productToEdit) {
       updateProduct(productToEdit.id, payload);
+      onSaved?.(payload.name, false);
     } else {
       addProduct(payload);
+      onSaved?.(payload.name, true);
     }
 
     onClose();

@@ -10,9 +10,15 @@ import { PdvView } from './components/PDV/PdvView';
 import { ProductsView } from './components/Products/ProductsView';
 import { StockView } from './components/Stock/StockView';
 import { ReportsView } from './components/Reports/ReportsView';
+import { LoginView } from './components/Auth/LoginView';
 
 const MainLayout: React.FC = () => {
-  const { currentScreen } = usePos();
+  const { currentScreen, isAuthenticated } = usePos();
+
+  // If not logged in, display the dedicated Login screen
+  if (!isAuthenticated) {
+    return <LoginView />;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFFDF9] via-[#FFF8F0] to-[#FFF1F2] text-stone-800 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
