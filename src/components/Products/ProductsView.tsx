@@ -38,11 +38,14 @@ export const ProductsView: React.FC = () => {
   ];
 
   const filteredProducts = useMemo(() => {
+    const search = (searchTerm || '').trim().toLowerCase();
     return products.filter((product) => {
+      if (!product) return false;
       const matchesSearch =
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (product.badge && product.badge.toLowerCase().includes(searchTerm.toLowerCase()));
+        !search ||
+        (product.name || '').toLowerCase().includes(search) ||
+        (product.description || '').toLowerCase().includes(search) ||
+        (product.badge ? product.badge.toLowerCase().includes(search) : false);
       const matchesCategory =
         selectedCategory === 'todos' || product.category === selectedCategory;
       return matchesSearch && matchesCategory;
@@ -104,7 +107,7 @@ export const ProductsView: React.FC = () => {
   };
 
   const getProductEmoji = (category: ProductCategory, name: string) => {
-    const lower = name.toLowerCase();
+    const lower = (name || '').toLowerCase();
     if (lower.includes('água') || lower.includes('agua')) return '💧';
     if (lower.includes('açaí') || lower.includes('acai')) return '🫐';
     if (lower.includes('sundae')) return '🍨';

@@ -225,14 +225,14 @@ export const ReportsView: React.FC = () => {
 
       // Text Search
       if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase();
-        const matchesId = s.id.toLowerCase().includes(term);
+        const term = searchTerm.trim().toLowerCase();
+        const matchesId = (s.id || '').toLowerCase().includes(term);
         const matchesCustomer = s.customerName ? s.customerName.toLowerCase().includes(term) : false;
-        const matchesMethod = s.paymentMethod.toLowerCase().includes(term);
-        const matchesItem = s.items.some(
+        const matchesMethod = (s.paymentMethod || '').toLowerCase().includes(term);
+        const matchesItem = Array.isArray(s.items) && s.items.some(
           (i) =>
-            i.productName.toLowerCase().includes(term) ||
-            i.selectedFlavors.some((f) => f.toLowerCase().includes(term))
+            (i?.productName || '').toLowerCase().includes(term) ||
+            (Array.isArray(i?.selectedFlavors) && i.selectedFlavors.some((f) => (f || '').toLowerCase().includes(term)))
         );
         if (!matchesId && !matchesCustomer && !matchesMethod && !matchesItem) return false;
       }

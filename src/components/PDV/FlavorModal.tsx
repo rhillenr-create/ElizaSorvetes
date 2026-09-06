@@ -32,36 +32,40 @@ export const FlavorModal: React.FC<FlavorModalProps> = ({ product, onClose, onCo
     }
 
     // Include custom flavors from stock
-    const customFlavors = stock
-      .filter((s) => s.category.toLowerCase() === expectedCategory.toLowerCase())
+    const customFlavors = (stock || [])
+      .filter((s) => (s?.category || '').toLowerCase() === expectedCategory.toLowerCase())
       .map((s) => {
-        const cleanName = s.name.replace(/^(sorvete|picolé|picole|sundae|sobremesa):\s*/i, '').trim();
+        const cleanName = (s?.name || '').replace(/^(sorvete|picolé|picole|sundae|sobremesa):\s*/i, '').trim();
         return {
-          id: s.id,
-          name: cleanName,
+          id: s.id || `custom_${cleanName}`,
+          name: cleanName || 'Sabor Especial',
           type: product.flavorType || 'sorvete'
         } as Flavor;
       })
-      .filter((custom) => !baseList.some((b) => b.name.toLowerCase() === custom.name.toLowerCase()));
+      .filter((custom) => !baseList.some((b) => (b?.name || '').toLowerCase() === (custom?.name || '').toLowerCase()));
 
     return [...baseList, ...customFlavors];
   }, [product.flavorType, stock]);
 
   // Filter flavors by search
   const filteredFlavors = useMemo(() => {
-    if (!searchQuery.trim()) return flavorList;
+    const q = (searchQuery || '').trim().toLowerCase();
+    if (!q) return flavorList;
     return flavorList.filter((f) =>
-      f.name.toLowerCase().includes(searchQuery.toLowerCase())
+      (f?.name || '').toLowerCase().includes(q)
     );
   }, [flavorList, searchQuery]);
 
   // Check stock for a flavor
   const getFlavorStock = (flavorName: string) => {
-    const item = stock.find(
-      (s) =>
-        s.name.toLowerCase().includes(flavorName.toLowerCase()) ||
-        flavorName.toLowerCase().includes(s.name.toLowerCase().replace('sorvete: ', '').replace('picolé: ', ''))
-    );
+    if (!flavorName) return undefined;
+    const target = flavorName.toLowerCase();
+    const item = (stock || []).find((s) => {
+      if (!s || !s.name) return false;
+      const sName = s.name.toLowerCase();
+      const sClean = sName.replace('sorvete: ', '').replace('picolé: ', '').replace('picole: ', '');
+      return sName.includes(target) || target.includes(sClean);
+    });
     return item;
   };
 

@@ -137,8 +137,20 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Stock state with safeStorage
   const [stock, setStock] = useState<StockItem[]>(() => {
-    const saved = safeStorage.get<StockItem[]>('eliza_stock', INITIAL_STOCK);
-    return Array.isArray(saved) && saved.length > 0 ? saved : JSON.parse(JSON.stringify(INITIAL_STOCK));
+    const saved = safeStorage.get<any[]>('eliza_stock', INITIAL_STOCK);
+    if (Array.isArray(saved) && saved.length > 0) {
+      return saved.map((s, idx) => ({
+        id: String(s?.id || `st_init_${idx}`),
+        name: String(s?.name || 'Item sem nome'),
+        category: s?.category || 'Sorvete',
+        quantity: typeof s?.quantity === 'number' ? s.quantity : 0,
+        minQuantity: typeof s?.minQuantity === 'number' ? s.minQuantity : 5,
+        unit: String(s?.unit || 'unidades'),
+        updatedAt: s?.updatedAt,
+        lastRestocked: s?.lastRestocked
+      }));
+    }
+    return JSON.parse(JSON.stringify(INITIAL_STOCK));
   });
 
   // Sales state with safeStorage (defaults to empty or saved)
@@ -299,7 +311,19 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         collection(db, stockPath),
         async (snapshot) => {
           if (!snapshot.empty) {
-            const list = snapshot.docs.map((d) => d.data() as StockItem);
+            const list = snapshot.docs.map((d) => {
+              const data = d.data() as any;
+              return {
+                id: String(data?.id || d.id),
+                name: String(data?.name || 'Item sem nome'),
+                category: data?.category || 'Sorvete',
+                quantity: typeof data?.quantity === 'number' ? data.quantity : 0,
+                minQuantity: typeof data?.minQuantity === 'number' ? data.minQuantity : 5,
+                unit: String(data?.unit || 'unidades'),
+                updatedAt: data?.updatedAt,
+                lastRestocked: data?.lastRestocked
+              } as StockItem;
+            });
             setStock(list);
           }
           setSyncStatus('synced');
@@ -666,10 +690,14 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // Deduct based on chosen flavors
         cartItem.selectedFlavors.forEach((flavorName) => {
+          if (!flavorName) return;
+          const target = flavorName.toLowerCase();
           for (const item of stockMap.values()) {
+            const itemName = (item?.name || '').toLowerCase();
+            const cleanItemName = itemName.replace('sorvete: ', '').replace('picolé: ', '').replace('picole: ', '');
             if (
-              item.name.toLowerCase().includes(flavorName.toLowerCase()) ||
-              flavorName.toLowerCase().includes(item.name.toLowerCase().replace('sorvete: ', '').replace('picolé: ', ''))
+              itemName.includes(target) ||
+              target.includes(cleanItemName)
             ) {
               item.quantity = Math.max(0, item.quantity - cartItem.quantity);
               item.updatedAt = todayDate;
@@ -774,10 +802,14 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
 
           cartItem.selectedFlavors.forEach((flavorName) => {
+            if (!flavorName) return;
+            const target = flavorName.toLowerCase();
             for (const item of stockMap.values()) {
+              const itemName = (item?.name || '').toLowerCase();
+              const cleanItemName = itemName.replace('sorvete: ', '').replace('picolé: ', '').replace('picole: ', '');
               if (
-                item.name.toLowerCase().includes(flavorName.toLowerCase()) ||
-                flavorName.toLowerCase().includes(item.name.toLowerCase().replace('sorvete: ', '').replace('picolé: ', ''))
+                itemName.includes(target) ||
+                target.includes(cleanItemName)
               ) {
                 item.quantity += cartItem.quantity;
                 item.updatedAt = today;

@@ -36,21 +36,29 @@ export const StockView: React.FC = () => {
   const [editMinQty, setEditMinQty] = useState<number>(0);
 
   // Metric counts
-  const totalItems = stock.length;
-  const lowStockItems = stock.filter((s) => s.quantity <= s.minQuantity);
-  const normalStockCount = totalItems - lowStockItems.length;
+  const safeStock = useMemo(() => Array.isArray(stock) ? stock.filter(Boolean) : [], [stock]);
+  const totalItems = safeStock.length;
+  const lowStockItems = safeStock.filter((s) => (s.quantity ?? 0) <= (s.minQuantity ?? 0));
+  const normalStockCount = Math.max(0, totalItems - lowStockItems.length);
 
   const filteredStock = useMemo(() => {
-    return stock.filter((item) => {
-      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const search = (searchTerm || '').trim().toLowerCase();
+    const currentCategory = (selectedCategory || 'todos').toLowerCase();
+
+    return safeStock.filter((item) => {
+      const name = (item?.name || '').toLowerCase();
+      const category = (item?.category || '').toLowerCase();
+      const matchesSearch = !search || name.includes(search);
       const matchesCategory =
-        selectedCategory === 'todos' ||
-        item.category.toLowerCase() === selectedCategory.toLowerCase();
-      const matchesLowStock = !filterLowStockOnly || item.quantity <= item.minQuantity;
+        currentCategory === 'todos' ||
+        category === currentCategory;
+      const qty = typeof item?.quantity === 'number' ? item.quantity : 0;
+      const minQty = typeof item?.minQuantity === 'number' ? item.minQuantity : 0;
+      const matchesLowStock = !filterLowStockOnly || qty <= minQty;
 
       return matchesSearch && matchesCategory && matchesLowStock;
     });
-  }, [stock, searchTerm, selectedCategory, filterLowStockOnly]);
+  }, [safeStock, searchTerm, selectedCategory, filterLowStockOnly]);
 
   const handleOpenEdit = (item: StockItem) => {
     setEditingItem(item);
@@ -240,14 +248,15 @@ export const StockView: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredStock.map((item) => {
-                  const isLow = item.quantity <= item.minQuantity;
-                  const isZero = item.quantity === 0;
+                filteredStock.map((item, index) => {
+                  const isLow = (item.quantity ?? 0) <= (item.minQuantity ?? 0);
+                  const isZero = (item.quantity ?? 0) === 0;
+                  const itemKey = item.id ? `stock-${item.id}-${index}` : `stock-row-${index}-${item.name || 'item'}`;
 
                   return (
                     <tr
-                      key={item.id}
-                      id={`stock-row-${item.id}`}
+                      key={itemKey}
+                      id={`stock-row-${item.id || index}`}
                       className={`hover:bg-amber-50/30 transition-colors ${
                         isLow ? 'bg-amber-50/40' : ''
                       }`}
