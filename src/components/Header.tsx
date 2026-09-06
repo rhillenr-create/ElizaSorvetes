@@ -1,20 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { usePos } from '../context/PosContext';
 import { NavScreen } from '../types';
+import { CashShiftModal, CashModalMode } from './CashRegister/CashShiftModal';
+import { formatBrazilDateDisplay, formatBrazilTime } from '../utils/dateUtils';
 import { 
   ShoppingBag, 
   Package, 
   BarChart3, 
   Clock, 
   CheckCircle2, 
-  Sparkles,
-  AlertTriangle,
-  Tag,
-  Cloud,
-  CloudOff,
-  RefreshCw,
+  Sparkles, 
+  AlertTriangle, 
+  Tag, 
+  Cloud, 
+  CloudOff, 
+  RefreshCw, 
   LogOut,
-  Database
+  Lock,
+  Unlock,
+  Coins
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -25,27 +29,29 @@ export const Header: React.FC = () => {
     cartTotalCount,
     currentUser,
     operatorUser,
+    activeShift,
     syncStatus,
     reconnectFirebase,
     logout
   } = usePos();
-  const [time, setTime] = useState<string>('');
+  const [currentDateTime, setCurrentDateTime] = useState<{ date: string; time: string }>({
+    date: formatBrazilDateDisplay(),
+    time: formatBrazilTime()
+  });
   const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
+  const [headerCashModalOpen, setHeaderCashModalOpen] = useState<boolean>(false);
+  const [headerCashModalMode, setHeaderCashModalMode] = useState<CashModalMode>('open');
 
   useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      setTime(
-        now.toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        })
-      );
+    const updateDateTime = () => {
+      setCurrentDateTime({
+        date: formatBrazilDateDisplay(),
+        time: formatBrazilTime()
+      });
     };
 
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
+    updateDateTime();
+    const interval = setInterval(updateDateTime, 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -128,7 +134,7 @@ export const Header: React.FC = () => {
             </div>
           </div>
 
-          {/* Desktop Navigation Tabs (Hidden on small screens, shown on sm+) */}
+          {/* Desktop Navigation Tabs */}
           <nav className="hidden sm:flex items-center gap-1.5 p-1 bg-white/80 rounded-2xl border border-rose-100/80 shadow-xs">
             {navItems.map((item) => {
               const isActive = currentScreen === item.id;
@@ -220,14 +226,47 @@ export const Header: React.FC = () => {
               )}
             </div>
 
-            <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 text-[11px] sm:text-xs">
-              <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600" />
-              <span className="font-semibold sm:font-medium">Aberto</span>
-            </div>
+            {/* Interactive Cash Shift Status (Clickable to manage register) */}
+            {activeShift ? (
+              <button
+                type="button"
+                id="btn-header-shift-status"
+                onClick={() => {
+                  setHeaderCashModalMode('close');
+                  setHeaderCashModalOpen(true);
+                }}
+                title="Caixa aberto. Clique para registrar suprimento, sangria ou fechar caixa."
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer"
+              >
+                <Unlock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600" />
+                <span className="hidden xs:inline">Gaveta:</span>
+                <span className="font-mono">R$ {activeShift.expectedCash.toFixed(2).replace('.', ',')}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                id="btn-header-open-shift"
+                onClick={() => {
+                  setHeaderCashModalMode('open');
+                  setHeaderCashModalOpen(true);
+                }}
+                title="Caixa fechado. Clique para abrir o caixa."
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer"
+              >
+                <Lock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-600" />
+                <span>Abrir Caixa</span>
+              </button>
+            )}
 
-            <div className="hidden lg:flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/80 border border-rose-100/80 font-mono text-stone-600">
-              <Clock className="w-3.5 h-3.5 text-stone-400" />
-              <span>{time || '--:--:--'}</span>
+            <div 
+              id="header-live-clock"
+              title="Data e hora oficial (Horário de Brasília)"
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/85 border border-rose-100/80 font-mono text-stone-700 text-[11px] sm:text-xs shadow-2xs"
+            >
+              <Clock className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+              <span className="font-semibold text-stone-800">{currentDateTime.date}</span>
+              <span className="text-stone-300">•</span>
+              <span className="text-stone-600">{currentDateTime.time || '--:--:--'}</span>
             </div>
 
             {/* Logout Button */}
@@ -243,6 +282,13 @@ export const Header: React.FC = () => {
           </div>
         </div>
       </header>
+
+      {/* Global Cash Shift Modal accessible from Header */}
+      <CashShiftModal
+        isOpen={headerCashModalOpen}
+        onClose={() => setHeaderCashModalOpen(false)}
+        initialMode={headerCashModalMode}
+      />
 
       {/* Mobile Bottom Navigation Bar (Fixed for smartphone ergonomics) */}
       <nav 

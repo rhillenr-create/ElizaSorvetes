@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Sale } from '../../types';
 import { usePos } from '../../context/PosContext';
+import { formatBrazilDateTime } from '../../utils/dateUtils';
 import { 
   CheckCircle, 
   Printer, 
@@ -42,13 +43,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
   // Check if app is running inside a preview iframe
   const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
 
-  const formattedDate = new Date(sale.timestamp).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  const formattedDate = formatBrazilDateTime(sale.timestamp);
 
   const getPaymentName = (method: string) => {
     switch (method) {

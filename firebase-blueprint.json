@@ -52,6 +52,28 @@
         "customerName": { "type": "string", "maxLength": 100 }
       },
       "required": ["id", "timestamp", "items", "subtotal", "discount", "total", "paymentMethod"]
+    },
+    "SalesReport": {
+      "title": "SalesReport",
+      "description": "Consolidated sales report and financial metrics automatically stored for daily or monthly summaries",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["diario", "mensal", "fechamento_caixa"] },
+        "periodDate": { "type": "string", "maxLength": 100 },
+        "periodLabel": { "type": "string", "maxLength": 120 },
+        "totalRevenue": { "type": "number" },
+        "totalSalesCount": { "type": "number" },
+        "totalItemsSold": { "type": "number" },
+        "averageTicket": { "type": "number" },
+        "paymentBreakdown": { "type": "object" },
+        "topFlavors": { "type": "array" },
+        "salesIds": { "type": "array" },
+        "createdAt": { "type": "string", "maxLength": 100 },
+        "updatedAt": { "type": "string", "maxLength": 100 },
+        "generatedBy": { "type": "string", "maxLength": 120 }
+      },
+      "required": ["id", "type", "periodDate", "totalRevenue", "totalSalesCount", "totalItemsSold", "averageTicket", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -66,6 +88,10 @@
     "/sales/{saleId}": {
       "schema": "Sale",
       "description": "Completed POS checkout receipts and sales history"
+    },
+    "/sales_reports/{reportId}": {
+      "schema": "SalesReport",
+      "description": "Consolidated sales reports generated and stored automatically in Firestore"
     }
   }
 }
