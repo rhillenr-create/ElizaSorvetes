@@ -30,6 +30,8 @@ export const Header: React.FC = () => {
     currentUser,
     operatorUser,
     activeShift,
+    todayRevenue,
+    todaySalesCount,
     syncStatus,
     reconnectFirebase,
     logout
@@ -224,6 +226,17 @@ export const Header: React.FC = () => {
                   Reconectar
                 </button>
               )}
+            </div>
+
+            {/* Live Faturamento do Dia (Sincronizado automaticamente com o banco) */}
+            <div
+              id="header-daily-revenue-pill"
+              title={`Faturamento de hoje: R$ ${todayRevenue.toFixed(2).replace('.', ',')} (${todaySalesCount} ${todaySalesCount === 1 ? 'venda' : 'vendas'} sincronizadas no banco)`}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-200/80 text-[11px] sm:text-xs font-semibold shadow-2xs"
+            >
+              <Coins className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-rose-500" />
+              <span className="hidden sm:inline text-stone-500 font-normal">Faturamento:</span>
+              <span className="font-mono font-bold text-rose-700">R$ {todayRevenue.toFixed(2).replace('.', ',')}</span>
             </div>
 
             {/* Interactive Cash Shift Status (Clickable to manage register) */}

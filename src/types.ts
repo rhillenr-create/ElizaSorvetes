@@ -58,6 +58,7 @@ export interface Sale {
   change?: number;
   cashierName?: string;
   customerName?: string;
+  shiftId?: string;
 }
 
 export type NavScreen = 'pdv' | 'produtos' | 'estoque' | 'relatorios';

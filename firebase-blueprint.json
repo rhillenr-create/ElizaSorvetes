@@ -49,9 +49,38 @@
         "amountReceived": { "type": "number" },
         "change": { "type": "number" },
         "cashierName": { "type": "string", "maxLength": 100 },
-        "customerName": { "type": "string", "maxLength": 100 }
+        "customerName": { "type": "string", "maxLength": 100 },
+        "shiftId": { "type": "string", "maxLength": 128 }
       },
       "required": ["id", "timestamp", "items", "subtotal", "discount", "total", "paymentMethod"]
+    },
+    "CashShift": {
+      "title": "CashShift",
+      "description": "Cash register shift tracking opening balance, sales, movements, and reconciliations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "status": { "type": "string", "enum": ["aberto", "fechado"] },
+        "openedAt": { "type": "string", "maxLength": 100 },
+        "closedAt": { "type": "string", "maxLength": 100 },
+        "operatorName": { "type": "string", "maxLength": 120 },
+        "initialCash": { "type": "number" },
+        "movements": { "type": "array" },
+        "totalCashSales": { "type": "number" },
+        "totalPixSales": { "type": "number" },
+        "totalDebitSales": { "type": "number" },
+        "totalCreditSales": { "type": "number" },
+        "totalSalesAmount": { "type": "number" },
+        "totalSalesCount": { "type": "number" },
+        "expectedCash": { "type": "number" },
+        "countedCash": { "type": "number" },
+        "difference": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "hasAdjustment": { "type": "boolean" },
+        "adjustmentAmount": { "type": "number" },
+        "adjustmentReason": { "type": "string", "maxLength": 300 }
+      },
+      "required": ["id", "status", "openedAt", "operatorName", "initialCash", "expectedCash"]
     },
     "SalesReport": {
       "title": "SalesReport",
@@ -88,6 +117,10 @@
     "/sales/{saleId}": {
       "schema": "Sale",
       "description": "Completed POS checkout receipts and sales history"
+    },
+    "/cash_shifts/{shiftId}": {
+      "schema": "CashShift",
+      "description": "Cash register shifts, opening balance, and drawer audit history"
     },
     "/sales_reports/{reportId}": {
       "schema": "SalesReport",

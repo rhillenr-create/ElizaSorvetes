@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Product, 
   CartItem, 
@@ -49,14 +49,109 @@ import {
   OperationType 
 } from '../firebase';
 
-function cleanUndefined<T extends Record<string, any>>(obj: T): T {
-  const result: any = {};
-  for (const key of Object.keys(obj)) {
-    if (obj[key] !== undefined) {
-      result[key] = obj[key];
-    }
+// Deep sanitization to ensure Firestore setDoc never fails due to undefined properties (even inside nested objects/arrays)
+export function cleanForFirestore<T>(input: T): T {
+  if (input === null || input === undefined) {
+    return null as any;
   }
-  return result;
+  if (Array.isArray(input)) {
+    return input
+      .filter((item) => item !== undefined)
+      .map((item) => cleanForFirestore(item)) as any;
+  }
+  if (typeof input === 'object' && !(input instanceof Date)) {
+    const result: any = {};
+    for (const [key, value] of Object.entries(input)) {
+      if (value !== undefined) {
+        result[key] = cleanForFirestore(value);
+      }
+    }
+    return result;
+  }
+  return input;
+}
+
+// Generate unique, collision-proof, chronological sale ID for Brazilian timezone
+export function generateUniqueSaleId(existingSales: Sale[]): string {
+  const now = new Date();
+  const dateCompact = getBrazilDateString(now).replace(/-/g, '');
+  const prefix = `VND-${dateCompact}-`;
+  
+  let maxSeq = 0;
+  existingSales.forEach((s) => {
+    if (s?.id && s.id.startsWith(prefix)) {
+      const parts = s.id.split('-');
+      if (parts.length >= 3) {
+        const num = parseInt(parts[2], 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
+    }
+  });
+
+  const nextSeq = String(maxSeq + 1).padStart(3, '0');
+  const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `${prefix}${nextSeq}-${randomSuffix}`;
+}
+
+// Reconcile open cash shift with sales from the database
+export function reconcileShiftWithSales(
+  shift: CashShift,
+  allSales: Sale[]
+): { updatedShift: CashShift; changed: boolean } {
+  const shiftSales = allSales.filter((s) => {
+    if (s.shiftId) {
+      return s.shiftId === shift.id;
+    }
+    const saleTime = new Date(s.timestamp).getTime();
+    const openTime = new Date(shift.openedAt).getTime();
+    if (saleTime < openTime) {
+      const saleDate = getBrazilDateString(s.timestamp);
+      const shiftDate = getBrazilDateString(shift.openedAt);
+      return saleDate === shiftDate;
+    }
+    if (shift.closedAt) {
+      const closeTime = new Date(shift.closedAt).getTime();
+      return saleTime <= closeTime;
+    }
+    return true;
+  });
+
+  const totalSalesCount = shiftSales.length;
+  const totalSalesAmount = Number(shiftSales.reduce((acc, s) => acc + (s.total || 0), 0).toFixed(2));
+  const totalCashSales = Number(shiftSales.filter((s) => s.paymentMethod === 'dinheiro').reduce((acc, s) => acc + (s.total || 0), 0).toFixed(2));
+  const totalPixSales = Number(shiftSales.filter((s) => s.paymentMethod === 'pix').reduce((acc, s) => acc + (s.total || 0), 0).toFixed(2));
+  const totalDebitSales = Number(shiftSales.filter((s) => s.paymentMethod === 'cartao_debito').reduce((acc, s) => acc + (s.total || 0), 0).toFixed(2));
+  const totalCreditSales = Number(shiftSales.filter((s) => s.paymentMethod === 'cartao_credito').reduce((acc, s) => acc + (s.total || 0), 0).toFixed(2));
+
+  const expectedCash = calculateShiftExpectedCash(
+    shift.initialCash,
+    totalCashSales,
+    shift.movements
+  );
+
+  const changed =
+    shift.totalSalesCount !== totalSalesCount ||
+    Math.abs(shift.totalSalesAmount - totalSalesAmount) > 0.001 ||
+    Math.abs(shift.totalCashSales - totalCashSales) > 0.001 ||
+    Math.abs(shift.totalPixSales - totalPixSales) > 0.001 ||
+    Math.abs(shift.totalDebitSales - totalDebitSales) > 0.001 ||
+    Math.abs(shift.totalCreditSales - totalCreditSales) > 0.001 ||
+    Math.abs(shift.expectedCash - expectedCash) > 0.001;
+
+  const updatedShift: CashShift = {
+    ...shift,
+    totalSalesCount,
+    totalSalesAmount,
+    totalCashSales,
+    totalPixSales,
+    totalDebitSales,
+    totalCreditSales,
+    expectedCash
+  };
+
+  return { updatedShift, changed };
 }
 
 interface PosContextType {
@@ -92,6 +187,15 @@ interface PosContextType {
   lastCompletedSale: Sale | null;
   setLastCompletedSale: (sale: Sale | null) => void;
   resetAllData: () => void;
+  // Real-time Daily Revenue & Shift Statistics (Sincronizado automaticamente com o banco)
+  todayRevenue: number;
+  todaySalesCount: number;
+  todayCashSales: number;
+  todayPixSales: number;
+  todayCardSales: number;
+  todaySales: Sale[];
+  shiftRevenue: number;
+  shiftSalesCount: number;
   // Cash Register Shift Management
   activeShift: CashShift | null;
   shiftsHistory: CashShift[];
@@ -156,10 +260,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Sales state with safeStorage (defaults to empty or saved)
   const [sales, setSales] = useState<Sale[]>(() => {
     const saved = safeStorage.get<Sale[]>('eliza_sales', INITIAL_SALES);
-    const valid = Array.isArray(saved) ? saved : [];
-    // Filter out old test mock sales if present
-    const testIds = ['VENDA-1001', 'VENDA-1002', 'VENDA-1003', 'VND-1001', 'VND-1002', 'VND-1003'];
-    return valid.filter((s) => !testIds.includes(s.id));
+    return Array.isArray(saved) ? saved : [];
   });
 
   // Cart state with safeStorage
@@ -188,6 +289,52 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
   const [isSavingReport, setIsSavingReport] = useState<boolean>(false);
   const [lastReportSyncTime, setLastReportSyncTime] = useState<string | null>(null);
+
+  // Faturamento do Dia em Tempo Real (Calculado e sincronizado com o banco de dados)
+  const todayDate = getBrazilDateString();
+  const todaySales = useMemo(() => {
+    return sales.filter((s) => getBrazilDateString(s.timestamp) === todayDate);
+  }, [sales, todayDate]);
+
+  const todayRevenue = useMemo(() => {
+    return Number(todaySales.reduce((sum, s) => sum + (s.total || 0), 0).toFixed(2));
+  }, [todaySales]);
+
+  const todaySalesCount = todaySales.length;
+
+  const todayCashSales = useMemo(() => {
+    return Number(todaySales.filter((s) => s.paymentMethod === 'dinheiro').reduce((sum, s) => sum + (s.total || 0), 0).toFixed(2));
+  }, [todaySales]);
+
+  const todayPixSales = useMemo(() => {
+    return Number(todaySales.filter((s) => s.paymentMethod === 'pix').reduce((sum, s) => sum + (s.total || 0), 0).toFixed(2));
+  }, [todaySales]);
+
+  const todayCardSales = useMemo(() => {
+    return Number(todaySales.filter((s) => s.paymentMethod === 'cartao_debito' || s.paymentMethod === 'cartao_credito').reduce((sum, s) => sum + (s.total || 0), 0).toFixed(2));
+  }, [todaySales]);
+
+  const shiftRevenue = useMemo(() => {
+    return activeShift ? activeShift.totalSalesAmount : todayRevenue;
+  }, [activeShift, todayRevenue]);
+
+  const shiftSalesCount = useMemo(() => {
+    return activeShift ? activeShift.totalSalesCount : todaySalesCount;
+  }, [activeShift, todaySalesCount]);
+
+  // Sincronização automática do Turno de Caixa em Aberto com as vendas do banco
+  useEffect(() => {
+    if (!activeShift || activeShift.status !== 'aberto') return;
+
+    const { updatedShift, changed } = reconcileShiftWithSales(activeShift, sales);
+    if (changed) {
+      setActiveShift(updatedShift);
+      safeStorage.set('eliza_active_shift', updatedShift);
+      setDoc(doc(db, 'cash_shifts', updatedShift.id), cleanForFirestore(updatedShift), { merge: true }).catch((err) => {
+        console.warn('Erro ao sincronizar turno com vendas no Firestore:', err);
+      });
+    }
+  }, [sales, activeShift?.id, activeShift?.status, activeShift?.initialCash, activeShift?.movements]);
 
   // Persistence effects for offline/instant access
   useEffect(() => {
@@ -218,31 +365,15 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeStorage.set('eliza_sales_reports', salesReports);
   }, [salesReports]);
 
-  // Clean test sales on initial load from localStorage and cloud
-  useEffect(() => {
-    const testIds = ['VENDA-1001', 'VENDA-1002', 'VENDA-1003', 'VND-1001', 'VND-1002', 'VND-1003'];
-    const currentSales = safeStorage.get<Sale[]>('eliza_sales', []);
-    const hasTest = currentSales.some((s) => testIds.includes(s.id));
-    if (hasTest) {
-      const filtered = currentSales.filter((s) => !testIds.includes(s.id));
-      setSales(filtered);
-      safeStorage.set('eliza_sales', filtered);
-    }
-    // Also remove from Firestore
-    testIds.forEach((id) => {
-      deleteDoc(doc(db, 'sales', id)).catch(() => {});
-    });
-  }, []);
-
   // Ensure ALL registered items are in Firestore database on boot
   useEffect(() => {
     const seedCatalogToFirestore = async () => {
       try {
         for (const p of INITIAL_PRODUCTS) {
-          await setDoc(doc(db, 'products', p.id), cleanUndefined(p), { merge: true });
+          await setDoc(doc(db, 'products', p.id), cleanForFirestore(p), { merge: true });
         }
         for (const s of INITIAL_STOCK) {
-          await setDoc(doc(db, 'stock', s.id), cleanUndefined(s), { merge: true });
+          await setDoc(doc(db, 'stock', s.id), cleanForFirestore(s), { merge: true });
         }
       } catch (err) {
         console.warn('Notice seeding catalog:', err);
@@ -338,14 +469,45 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubSales = onSnapshot(
         collection(db, salesPath),
         (snapshot) => {
-          const testIds = new Set(['VENDA-1001', 'VENDA-1002', 'VENDA-1003', 'VND-1001', 'VND-1002', 'VND-1003']);
-          const cloudSales = snapshot.docs
-            .map((d) => d.data() as Sale)
-            .filter((s) => !testIds.has(s.id));
+          const cloudSales: Sale[] = snapshot.docs.map((d) => {
+            const data = d.data() as any;
+            return {
+              id: String(data?.id || d.id),
+              timestamp: String(data?.timestamp || getBrazilIsoTimestamp()),
+              items: Array.isArray(data?.items) ? data.items : [],
+              subtotal: typeof data?.subtotal === 'number' ? data.subtotal : (data?.total || 0),
+              discount: typeof data?.discount === 'number' ? data.discount : 0,
+              total: typeof data?.total === 'number' ? data.total : 0,
+              paymentMethod: data?.paymentMethod || 'dinheiro',
+              amountReceived: data?.amountReceived,
+              change: data?.change,
+              cashierName: data?.cashierName || 'Eliza',
+              customerName: data?.customerName || 'Consumidor Final',
+              shiftId: data?.shiftId || undefined
+            } as Sale;
+          });
 
           cloudSales.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-          setSales(cloudSales);
-          safeStorage.set('eliza_sales', cloudSales);
+
+          setSales((currentLocal) => {
+            const cloudIds = new Set(cloudSales.map((s) => s.id));
+            const pendingLocal = currentLocal.filter((local) => !cloudIds.has(local.id));
+
+            // Push pending local sales to Firestore so they are never lost
+            if (pendingLocal.length > 0) {
+              pendingLocal.forEach((p) => {
+                setDoc(doc(db, 'sales', p.id), cleanForFirestore(p), { merge: true }).catch((e) => {
+                  console.warn('Tentativa de sincronizar venda pendente:', p.id, e);
+                });
+              });
+            }
+
+            const combined = [...cloudSales, ...pendingLocal];
+            combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            safeStorage.set('eliza_sales', combined);
+            return combined;
+          });
+
           setSyncStatus('synced');
         },
         (error) => {
@@ -532,7 +694,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         safeStorage.set('eliza_sales_reports', updated);
         return updated;
       });
-      await setDoc(doc(db, 'sales_reports', report.id), cleanUndefined(report), { merge: true });
+      await setDoc(doc(db, 'sales_reports', report.id), cleanForFirestore(report), { merge: true });
       setLastReportSyncTime(getBrazilIsoTimestamp());
     } catch (err) {
       console.warn(`Aviso ao gravar relatório ${report.id} no Firestore:`, err);
@@ -651,9 +813,9 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const now = new Date();
     const todayDate = getBrazilDateString(now);
-    const saleNumber = 1000 + sales.length + 1;
+    const newSaleId = generateUniqueSaleId(sales);
     const newSale: Sale = {
-      id: `VENDA-${saleNumber}`,
+      id: newSaleId,
       timestamp: getBrazilIsoTimestamp(now),
       items: [...cart],
       subtotal: total,
@@ -663,101 +825,98 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       amountReceived: paymentMethod === 'dinheiro' ? amountReceived : undefined,
       change: paymentMethod === 'dinheiro' ? change : undefined,
       cashierName: currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Eliza',
-      customerName: customerName?.trim() || 'Consumidor Final'
+      customerName: customerName?.trim() || 'Consumidor Final',
+      shiftId: activeShift?.id || undefined
     };
 
-    let modifiedStockItems: StockItem[] = [];
+    // Calculate stock changes synchronously to ensure immediate Firestore persistence
+    const currentStock = stock;
+    const stockMap = new Map<string, StockItem>(currentStock.map((s) => [s.id, { ...s }]));
 
-    // Deduct stock
-    setStock((currentStock) => {
-      const stockMap = new Map<string, StockItem>(currentStock.map((s) => [s.id, { ...s }]));
+    cart.forEach((cartItem) => {
+      // If product is water
+      if (cartItem.productId === 'agua_mineral') {
+        const waterItem = stockMap.get('st_agua_mineral');
+        if (waterItem) {
+          waterItem.quantity = Math.max(0, waterItem.quantity - cartItem.quantity);
+          waterItem.updatedAt = todayDate;
+        }
+      } else if (cartItem.productId === 'sundae') {
+        const baseSundae = stockMap.get('st_sundae_base');
+        if (baseSundae) {
+          baseSundae.quantity = Math.max(0, baseSundae.quantity - cartItem.quantity);
+          baseSundae.updatedAt = todayDate;
+        }
+      }
 
-      cart.forEach((cartItem) => {
-        // If product is water
-        if (cartItem.productId === 'agua_mineral') {
-          const waterItem = stockMap.get('st_agua_mineral');
-          if (waterItem) {
-            waterItem.quantity = Math.max(0, waterItem.quantity - cartItem.quantity);
-            waterItem.updatedAt = todayDate;
-          }
-        } else if (cartItem.productId === 'sundae') {
-          const baseSundae = stockMap.get('st_sundae_base');
-          if (baseSundae) {
-            baseSundae.quantity = Math.max(0, baseSundae.quantity - cartItem.quantity);
-            baseSundae.updatedAt = todayDate;
+      // Deduct based on chosen flavors
+      cartItem.selectedFlavors.forEach((flavorName) => {
+        if (!flavorName) return;
+        const target = flavorName.toLowerCase();
+        for (const item of stockMap.values()) {
+          const itemName = (item?.name || '').toLowerCase();
+          const cleanItemName = itemName.replace('sorvete: ', '').replace('picolé: ', '').replace('picole: ', '');
+          if (
+            itemName.includes(target) ||
+            target.includes(cleanItemName)
+          ) {
+            item.quantity = Math.max(0, item.quantity - cartItem.quantity);
+            item.updatedAt = todayDate;
+            break;
           }
         }
-
-        // Deduct based on chosen flavors
-        cartItem.selectedFlavors.forEach((flavorName) => {
-          if (!flavorName) return;
-          const target = flavorName.toLowerCase();
-          for (const item of stockMap.values()) {
-            const itemName = (item?.name || '').toLowerCase();
-            const cleanItemName = itemName.replace('sorvete: ', '').replace('picolé: ', '').replace('picole: ', '');
-            if (
-              itemName.includes(target) ||
-              target.includes(cleanItemName)
-            ) {
-              item.quantity = Math.max(0, item.quantity - cartItem.quantity);
-              item.updatedAt = todayDate;
-              break;
-            }
-          }
-        });
       });
-
-      modifiedStockItems = Array.from(stockMap.values());
-      return modifiedStockItems;
     });
 
-    setSales((prev) => [newSale, ...prev]);
+    const modifiedStockItems = Array.from(stockMap.values());
+    setStock(modifiedStockItems);
+    safeStorage.set('eliza_stock', modifiedStockItems);
+
+    const updatedSalesList = [newSale, ...sales];
+    setSales(updatedSalesList);
+    safeStorage.set('eliza_sales', updatedSalesList);
     setLastCompletedSale(newSale);
     clearCart();
 
-    // If there is an active cash register shift, update the shift metrics
+    // If there is an active cash register shift, update the shift metrics immediately
     if (activeShift) {
-      setActiveShift((currentShift) => {
-        if (!currentShift) return null;
-        const updatedShift: CashShift = {
-          ...currentShift,
-          totalSalesCount: currentShift.totalSalesCount + 1,
-          totalSalesAmount: currentShift.totalSalesAmount + total,
-          totalCashSales: paymentMethod === 'dinheiro' ? currentShift.totalCashSales + total : currentShift.totalCashSales,
-          totalPixSales: paymentMethod === 'pix' ? currentShift.totalPixSales + total : currentShift.totalPixSales,
-          totalDebitSales: paymentMethod === 'cartao_debito' ? currentShift.totalDebitSales + total : currentShift.totalDebitSales,
-          totalCreditSales: paymentMethod === 'cartao_credito' ? currentShift.totalCreditSales + total : currentShift.totalCreditSales,
-        };
+      const updatedShift: CashShift = {
+        ...activeShift,
+        totalSalesCount: activeShift.totalSalesCount + 1,
+        totalSalesAmount: Number((activeShift.totalSalesAmount + total).toFixed(2)),
+        totalCashSales: paymentMethod === 'dinheiro' ? Number((activeShift.totalCashSales + total).toFixed(2)) : activeShift.totalCashSales,
+        totalPixSales: paymentMethod === 'pix' ? Number((activeShift.totalPixSales + total).toFixed(2)) : activeShift.totalPixSales,
+        totalDebitSales: paymentMethod === 'cartao_debito' ? Number((activeShift.totalDebitSales + total).toFixed(2)) : activeShift.totalDebitSales,
+        totalCreditSales: paymentMethod === 'cartao_credito' ? Number((activeShift.totalCreditSales + total).toFixed(2)) : activeShift.totalCreditSales,
+      };
 
-        updatedShift.expectedCash = calculateShiftExpectedCash(
-          updatedShift.initialCash,
-          updatedShift.totalCashSales,
-          updatedShift.movements
-        );
+      updatedShift.expectedCash = calculateShiftExpectedCash(
+        updatedShift.initialCash,
+        updatedShift.totalCashSales,
+        updatedShift.movements
+      );
 
-        safeStorage.set('eliza_active_shift', updatedShift);
-        setDoc(doc(db, 'cash_shifts', updatedShift.id), cleanUndefined(updatedShift), { merge: true }).catch((err) => {
-          console.warn('Erro ao atualizar turno de caixa no Firestore:', err);
-        });
+      setActiveShift(updatedShift);
+      safeStorage.set('eliza_active_shift', updatedShift);
 
-        return updatedShift;
+      setDoc(doc(db, 'cash_shifts', updatedShift.id), cleanForFirestore(updatedShift), { merge: true }).catch((err) => {
+        console.warn('Erro ao atualizar turno de caixa no Firestore:', err);
       });
     }
 
     // Persist to Firestore automatically with zero risk of loss
-    setDoc(doc(db, 'sales', newSale.id), cleanUndefined(newSale)).catch((err) => {
+    setDoc(doc(db, 'sales', newSale.id), cleanForFirestore(newSale)).catch((err) => {
       console.warn('Venda preservada localmente. Firestore sincronizará:', err);
     });
 
     // Update deducted stock items in Firestore
     modifiedStockItems.forEach((st) => {
-      setDoc(doc(db, 'stock', st.id), cleanUndefined(st)).catch((err) => {
+      setDoc(doc(db, 'stock', st.id), cleanForFirestore(st), { merge: true }).catch((err) => {
         console.warn('Estoque preservado localmente. Firestore sincronizará:', err);
       });
     });
 
     // Gravação automática dos relatórios consolidados de vendas no banco de dados (Firestore)
-    const updatedSalesList = [newSale, ...sales];
     const autoDailyReport = buildDailySalesReport(todayDate, updatedSalesList, operatorUser?.name);
     persistReportToFirestore(autoDailyReport).catch((err) => {
       console.warn('Gravação automática do relatório diário no Firestore falhou:', err);
@@ -854,7 +1013,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatedShift.expectedCash = updatedShift.initialCash + updatedShift.totalCashSales + sumSuprimentos - sumSangrias;
 
         safeStorage.set('eliza_active_shift', updatedShift);
-        setDoc(doc(db, 'cash_shifts', updatedShift.id), cleanUndefined(updatedShift), { merge: true }).catch(() => {});
+        setDoc(doc(db, 'cash_shifts', updatedShift.id), cleanForFirestore(updatedShift), { merge: true }).catch(() => {});
         return updatedShift;
       });
     }
@@ -866,7 +1025,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (restoreStock && restoredStockItems.length > 0) {
       restoredStockItems.forEach((st) => {
-        setDoc(doc(db, 'stock', st.id), cleanUndefined(st)).catch((err) => {
+        setDoc(doc(db, 'stock', st.id), cleanForFirestore(st), { merge: true }).catch((err) => {
           console.warn('Error updating restored stock in Firestore:', err);
         });
       });
@@ -917,7 +1076,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             expectedCash: prev.initialCash
           };
           safeStorage.set('eliza_active_shift', reset);
-          setDoc(doc(db, 'cash_shifts', reset.id), cleanUndefined(reset), { merge: true }).catch(() => {});
+          setDoc(doc(db, 'cash_shifts', reset.id), cleanForFirestore(reset), { merge: true }).catch(() => {});
           return reset;
         });
       }
@@ -939,13 +1098,13 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const prodsToSave = products.length > 0 ? products : INITIAL_PRODUCTS;
       for (const p of prodsToSave) {
-        await setDoc(doc(db, 'products', p.id), cleanUndefined(p), { merge: true });
+        await setDoc(doc(db, 'products', p.id), cleanForFirestore(p), { merge: true });
         pCount++;
       }
 
       const stockToSave = stock.length > 0 ? stock : INITIAL_STOCK;
       for (const s of stockToSave) {
-        await setDoc(doc(db, 'stock', s.id), cleanUndefined(s), { merge: true });
+        await setDoc(doc(db, 'stock', s.id), cleanForFirestore(s), { merge: true });
         sCount++;
       }
 
@@ -961,27 +1120,60 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Cash Shift Operations
   const openShift = async (initialCash: number, operatorName: string, notes?: string): Promise<CashShift> => {
     const shiftId = generateBrazilTimestampId('CX');
+    const openedAt = getBrazilIsoTimestamp();
+    const todayStr = getBrazilDateString();
+
+    // Reconcile with unassigned today's sales so daily revenue is never wiped upon opening a register
+    const unassignedTodaySales = sales.filter((s) => {
+      const isToday = getBrazilDateString(s.timestamp) === todayStr;
+      return isToday && (!s.shiftId || s.shiftId === shiftId);
+    });
+
+    const initCash = Number(initialCash) || 0;
+    const initialSalesCount = unassignedTodaySales.length;
+    const initialSalesAmount = Number(unassignedTodaySales.reduce((sum, s) => sum + (s.total || 0), 0).toFixed(2));
+    const initialCashSales = Number(unassignedTodaySales.filter((s) => s.paymentMethod === 'dinheiro').reduce((sum, s) => sum + (s.total || 0), 0).toFixed(2));
+    const initialPixSales = Number(unassignedTodaySales.filter((s) => s.paymentMethod === 'pix').reduce((sum, s) => sum + (s.total || 0), 0).toFixed(2));
+    const initialDebitSales = Number(unassignedTodaySales.filter((s) => s.paymentMethod === 'cartao_debito').reduce((sum, s) => sum + (s.total || 0), 0).toFixed(2));
+    const initialCreditSales = Number(unassignedTodaySales.filter((s) => s.paymentMethod === 'cartao_credito').reduce((sum, s) => sum + (s.total || 0), 0).toFixed(2));
+
+    const expectedCash = calculateShiftExpectedCash(initCash, initialCashSales, []);
+
     const newShift: CashShift = {
       id: shiftId,
       status: 'aberto',
-      openedAt: getBrazilIsoTimestamp(),
+      openedAt,
       operatorName: operatorName.trim() || operatorUser?.name || 'Operador',
-      initialCash: Number(initialCash) || 0,
+      initialCash: initCash,
       movements: [],
-      totalCashSales: 0,
-      totalPixSales: 0,
-      totalDebitSales: 0,
-      totalCreditSales: 0,
-      totalSalesAmount: 0,
-      totalSalesCount: 0,
-      expectedCash: Number(initialCash) || 0,
+      totalCashSales: initialCashSales,
+      totalPixSales: initialPixSales,
+      totalDebitSales: initialDebitSales,
+      totalCreditSales: initialCreditSales,
+      totalSalesAmount: initialSalesAmount,
+      totalSalesCount: initialSalesCount,
+      expectedCash,
       notes: notes?.trim() || undefined
     };
+
+    // Associate unassigned sales from today to this new shift
+    if (unassignedTodaySales.length > 0) {
+      setSales((prevSales) =>
+        prevSales.map((s) => {
+          if (unassignedTodaySales.some((u) => u.id === s.id)) {
+            const updated = { ...s, shiftId };
+            setDoc(doc(db, 'sales', s.id), cleanForFirestore(updated), { merge: true }).catch(() => {});
+            return updated;
+          }
+          return s;
+        })
+      );
+    }
 
     setActiveShift(newShift);
     safeStorage.set('eliza_active_shift', newShift);
 
-    await setDoc(doc(db, 'cash_shifts', newShift.id), cleanUndefined(newShift), { merge: true }).catch((err) => {
+    await setDoc(doc(db, 'cash_shifts', newShift.id), cleanForFirestore(newShift), { merge: true }).catch((err) => {
       console.warn('Erro ao salvar abertura de caixa no Firestore:', err);
     });
 
@@ -1060,7 +1252,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveShift(null);
     safeStorage.set('eliza_active_shift', null);
 
-    await setDoc(doc(db, 'cash_shifts', closedShift.id), cleanUndefined(closedShift), { merge: true }).catch((err) => {
+    await setDoc(doc(db, 'cash_shifts', closedShift.id), cleanForFirestore(closedShift), { merge: true }).catch((err) => {
       console.warn('Erro ao salvar fechamento de caixa no Firestore:', err);
     });
 
@@ -1124,7 +1316,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveShift(updatedShift);
     safeStorage.set('eliza_active_shift', updatedShift);
 
-    await setDoc(doc(db, 'cash_shifts', updatedShift.id), cleanUndefined(updatedShift), { merge: true }).catch((err) => {
+    await setDoc(doc(db, 'cash_shifts', updatedShift.id), cleanForFirestore(updatedShift), { merge: true }).catch((err) => {
       console.warn('Erro ao registrar movimentação de caixa no Firestore:', err);
     });
   };
@@ -1181,7 +1373,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     if (updatedItem) {
-      setDoc(doc(db, 'stock', stockId), cleanUndefined(updatedItem), { merge: true }).catch((err) => {
+      setDoc(doc(db, 'stock', stockId), cleanForFirestore(updatedItem), { merge: true }).catch((err) => {
         console.warn('Error adjusting stock in Firestore:', err);
       });
     }
@@ -1240,11 +1432,11 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
-    setDoc(doc(db, 'products', product.id), cleanUndefined(product)).catch((err) => {
+    setDoc(doc(db, 'products', product.id), cleanForFirestore(product)).catch((err) => {
       console.warn('Error adding product to Firestore:', err);
     });
     if (newStockItem) {
-      setDoc(doc(db, 'stock', (newStockItem as StockItem).id), cleanUndefined(newStockItem)).catch((err) => {
+      setDoc(doc(db, 'stock', (newStockItem as StockItem).id), cleanForFirestore(newStockItem)).catch((err) => {
         console.warn('Error adding stock to Firestore:', err);
       });
     }
@@ -1293,7 +1485,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (updatedProductData) {
-      setDoc(doc(db, 'products', id), cleanUndefined(updatedProductData), { merge: true }).catch((err) => {
+      setDoc(doc(db, 'products', id), cleanForFirestore(updatedProductData), { merge: true }).catch((err) => {
         console.warn('Error updating product in Firestore:', err);
       });
     }
@@ -1324,7 +1516,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updated;
     });
 
-    setDoc(doc(db, 'stock', newItem.id), cleanUndefined(newItem)).catch((err) => {
+    setDoc(doc(db, 'stock', newItem.id), cleanForFirestore(newItem)).catch((err) => {
       console.warn('Error adding stock item to Firestore:', err);
     });
 
@@ -1349,7 +1541,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeStorage.set('eliza_products', freshProducts);
 
     freshProducts.forEach((p: Product) => {
-      setDoc(doc(db, 'products', p.id), cleanUndefined(p)).catch(() => {});
+      setDoc(doc(db, 'products', p.id), cleanForFirestore(p)).catch(() => {});
     });
   };
 
@@ -1370,10 +1562,10 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeStorage.set('eliza_cart', []);
 
     freshProducts.forEach((p: Product) => {
-      setDoc(doc(db, 'products', p.id), cleanUndefined(p)).catch(() => {});
+      setDoc(doc(db, 'products', p.id), cleanForFirestore(p)).catch(() => {});
     });
     freshStock.forEach((s: StockItem) => {
-      setDoc(doc(db, 'stock', s.id), cleanUndefined(s)).catch(() => {});
+      setDoc(doc(db, 'stock', s.id), cleanForFirestore(s)).catch(() => {});
     });
   };
 
@@ -1408,6 +1600,15 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         lastCompletedSale,
         setLastCompletedSale,
         resetAllData,
+        // Real-time Daily Revenue & Shift Statistics (Sincronizado automaticamente com o banco)
+        todayRevenue,
+        todaySalesCount,
+        todayCashSales,
+        todayPixSales,
+        todayCardSales,
+        todaySales,
+        shiftRevenue,
+        shiftSalesCount,
         // Cash Register Shift
         activeShift,
         shiftsHistory,

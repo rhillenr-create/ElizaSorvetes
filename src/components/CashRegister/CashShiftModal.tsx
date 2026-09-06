@@ -42,7 +42,9 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     closeShift, 
     addCashMovement, 
     operatorUser, 
-    currentUser 
+    currentUser,
+    todayRevenue,
+    todaySalesCount
   } = usePos();
 
   const [mode, setMode] = useState<CashModalMode>(initialMode);
@@ -260,6 +262,24 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Sincronização em tempo real do faturamento com o banco */}
+            <div className="p-3.5 rounded-xl bg-gradient-to-br from-amber-50 to-rose-50 border border-amber-200/80 text-stone-800 text-xs space-y-1.5">
+              <div className="flex items-center justify-between font-semibold text-amber-900">
+                <span className="flex items-center gap-1.5">
+                  <Coins className="w-4 h-4 text-amber-600" />
+                  Faturamento de Hoje no Banco:
+                </span>
+                <span className="font-mono text-sm font-bold text-rose-700">
+                  R$ {todayRevenue.toFixed(2).replace('.', ',')}
+                </span>
+              </div>
+              <p className="text-[11px] text-stone-600 leading-relaxed">
+                {todaySalesCount > 0
+                  ? `Existem ${todaySalesCount} ${todaySalesCount === 1 ? 'venda registrada' : 'vendas registradas'} hoje. Ao abrir o caixa, o faturamento diário é mantido intacto e novas vendas serão vinculadas a este turno e sincronizadas automaticamente no banco.`
+                  : 'Nenhuma venda registrada ainda hoje. Ao abrir o caixa, todas as vendas serão salvas imediatamente no Firestore e o faturamento atualizará em tempo real.'}
+              </p>
             </div>
 
             <div className="pt-2 flex items-center justify-end gap-2.5">
