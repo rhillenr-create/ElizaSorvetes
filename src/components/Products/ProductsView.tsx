@@ -86,7 +86,7 @@ export const ProductsView: React.FC = () => {
   const handleQuickPriceChange = (product: Product, delta: number) => {
     const newPrice = Math.max(0.5, Math.round((product.price + delta) * 100) / 100);
     updateProduct(product.id, { price: newPrice });
-    setFeedbackMsg(`Preço de "${product.name}" alterado para R$ ${newPrice.toFixed(2).replace('.', ',')}.`);
+    setFeedbackMsg(`Preço de "${product.name}" alterado para R$ ${newPrice.toFixed(2).replace('.', ',')} e salvo no banco de dados.`);
     setTimeout(() => setFeedbackMsg(null), 3500);
   };
 
@@ -100,7 +100,7 @@ export const ProductsView: React.FC = () => {
     if (!isNaN(val) && val >= 0) {
       const newPrice = Math.round(val * 100) / 100;
       updateProduct(product.id, { price: newPrice });
-      setFeedbackMsg(`Preço de "${product.name}" salvo como R$ ${newPrice.toFixed(2).replace('.', ',')}.`);
+      setFeedbackMsg(`Preço de "${product.name}" salvo como R$ ${newPrice.toFixed(2).replace('.', ',')} no banco de dados.`);
       setTimeout(() => setFeedbackMsg(null), 3500);
     }
     setInlineEditingPriceId(null);

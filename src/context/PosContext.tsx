@@ -365,21 +365,34 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeStorage.set('eliza_sales_reports', salesReports);
   }, [salesReports]);
 
-  // Ensure ALL registered items are in Firestore database on boot
+  // Ensure default catalog items exist in Firestore database on boot WITHOUT overwriting customized user prices or quantities
   useEffect(() => {
-    const seedCatalogToFirestore = async () => {
+    const seedMissingCatalogToFirestore = async () => {
       try {
+        const productsSnap = await getDocs(collection(db, 'products'));
+        const existingProductIds = new Set(productsSnap.docs.map((d) => d.id));
+
         for (const p of INITIAL_PRODUCTS) {
-          await setDoc(doc(db, 'products', p.id), cleanForFirestore(p), { merge: true });
+          // ONLY insert if the product does not exist yet in Firestore
+          if (!existingProductIds.has(p.id)) {
+            await setDoc(doc(db, 'products', p.id), cleanForFirestore(p));
+          }
         }
+
+        const stockSnap = await getDocs(collection(db, 'stock'));
+        const existingStockIds = new Set(stockSnap.docs.map((d) => d.id));
+
         for (const s of INITIAL_STOCK) {
-          await setDoc(doc(db, 'stock', s.id), cleanForFirestore(s), { merge: true });
+          // ONLY insert if the stock item does not exist yet in Firestore
+          if (!existingStockIds.has(s.id)) {
+            await setDoc(doc(db, 'stock', s.id), cleanForFirestore(s));
+          }
         }
       } catch (err) {
-        console.warn('Notice seeding catalog:', err);
+        console.warn('Aviso ao verificar/cadastrar itens iniciais no Firestore:', err);
       }
     };
-    seedCatalogToFirestore();
+    seedMissingCatalogToFirestore();
   }, []);
 
   // Auto-connect to Firebase Firestore on application boot
@@ -426,8 +439,34 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         collection(db, productsPath),
         async (snapshot) => {
           if (!snapshot.empty) {
-            const list = snapshot.docs.map((d) => d.data() as Product);
+            const list = snapshot.docs.map((d) => {
+              const data = d.data() as any;
+              return {
+                id: String(data?.id || d.id),
+                name: String(data?.name || ''),
+                price: typeof data?.price === 'number' ? data.price : parseFloat(data?.price) || 0,
+                category: data?.category || 'sorvete',
+                description: data?.description || '',
+                badge: data?.badge || undefined,
+                requiresFlavors: Boolean(data?.requiresFlavors),
+                flavorType: data?.flavorType,
+                maxFlavors: typeof data?.maxFlavors === 'number' ? data.maxFlavors : undefined,
+                iconName: data?.iconName,
+                colorBg: data?.colorBg || undefined
+              } as Product;
+            });
+
+            // Maintain natural order: default items first, then custom items alphabetically
+            const initialOrder = new Map(INITIAL_PRODUCTS.map((p, idx) => [p.id, idx]));
+            list.sort((a, b) => {
+              const orderA = initialOrder.has(a.id) ? initialOrder.get(a.id)! : 999;
+              const orderB = initialOrder.has(b.id) ? initialOrder.get(b.id)! : 999;
+              if (orderA !== orderB) return orderA - orderB;
+              return a.name.localeCompare(b.name);
+            });
+
             setProducts(list);
+            safeStorage.set('eliza_products', list);
           }
           setSyncStatus('synced');
         },
@@ -1402,42 +1441,48 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       price: Math.max(0, Number(newProduct.price) || 0)
     };
 
-    setProducts((prev) => [...prev, product]);
+    setProducts((prev) => {
+      const next = [...prev, product];
+      safeStorage.set('eliza_products', next);
+      return next;
+    });
 
     let newStockItem: StockItem | null = null;
     if (!product.requiresFlavors) {
+      const categoryName =
+        product.category === 'bebida'
+          ? 'Bebida'
+          : product.category === 'sobremesa'
+          ? 'Sobremesa'
+          : product.category === 'picole'
+          ? 'Picolé'
+          : 'Sorvete';
+      newStockItem = {
+        id: `st_${product.id}`,
+        name: product.name,
+        category: categoryName,
+        quantity: 20,
+        minQuantity: 5,
+        unit: product.category === 'bebida' ? 'unidades' : 'porções',
+        updatedAt: getBrazilDateString()
+      };
       setStock((prev) => {
         const exists = prev.some((s) => s.id === `st_${product.id}`);
-        if (!exists) {
-          const categoryName =
-            product.category === 'bebida'
-              ? 'Bebida'
-              : product.category === 'sobremesa'
-              ? 'Sobremesa'
-              : product.category === 'picole'
-              ? 'Picolé'
-              : 'Sorvete';
-          newStockItem = {
-            id: `st_${product.id}`,
-            name: product.name,
-            category: categoryName,
-            quantity: 20,
-            minQuantity: 5,
-            unit: product.category === 'bebida' ? 'unidades' : 'porções',
-            updatedAt: getBrazilDateString()
-          };
-          return [...prev, newStockItem];
+        if (!exists && newStockItem) {
+          const next = [...prev, newStockItem];
+          safeStorage.set('eliza_stock', next);
+          return next;
         }
         return prev;
       });
     }
 
     setDoc(doc(db, 'products', product.id), cleanForFirestore(product)).catch((err) => {
-      console.warn('Error adding product to Firestore:', err);
+      console.warn('Erro ao salvar novo produto no Firestore:', err);
     });
     if (newStockItem) {
       setDoc(doc(db, 'stock', (newStockItem as StockItem).id), cleanForFirestore(newStockItem)).catch((err) => {
-        console.warn('Error adding stock to Firestore:', err);
+        console.warn('Erro ao criar estoque no Firestore:', err);
       });
     }
 
@@ -1445,24 +1490,33 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateProduct = (id: string, updates: Partial<Product>) => {
-    let updatedProductData: Product | null = null;
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === id) {
-          const updated = { ...p, ...updates };
-          if (updates.price !== undefined) {
-            updated.price = Math.max(0, Number(updates.price));
-          }
-          updatedProductData = updated;
-          return updated;
-        }
-        return p;
-      })
-    );
+    // Localiza produto atual ou monta objeto base com valores padrão
+    const current = products.find((p) => p.id === id);
+    const updatedProduct: Product = {
+      ...(current || {
+        id,
+        name: updates.name || 'Produto',
+        price: 0,
+        category: 'sorvete',
+        description: ''
+      }),
+      ...updates,
+      price: updates.price !== undefined ? Math.max(0, Number(updates.price)) : (current?.price ?? 0)
+    };
 
-    // Update items in open cart if matching product
-    setCart((prev) =>
-      prev.map((cartItem) => {
+    // 1. Atualiza imediatamente o estado React e safeStorage
+    setProducts((prev) => {
+      const exists = prev.some((p) => p.id === id);
+      const nextList = exists
+        ? prev.map((p) => (p.id === id ? updatedProduct : p))
+        : [...prev, updatedProduct];
+      safeStorage.set('eliza_products', nextList);
+      return nextList;
+    });
+
+    // 2. Atualiza itens no carrinho se coincidirem com o produto modificado
+    setCart((prev) => {
+      const nextCart = prev.map((cartItem) => {
         if (cartItem.productId === id) {
           return {
             ...cartItem,
@@ -1471,29 +1525,44 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
         }
         return cartItem;
-      })
-    );
+      });
+      safeStorage.set('eliza_cart', nextCart);
+      return nextCart;
+    });
 
-    // Also update associated stock item name if it exists
+    // 3. Atualiza item de estoque associado se o nome mudou
     if (updates.name) {
-      setStock((prev) =>
-        prev.map((item) =>
+      setStock((prev) => {
+        const nextStock = prev.map((item) =>
           item.id === `st_${id}` ? { ...item, name: updates.name! } : item
-        )
-      );
+        );
+        safeStorage.set('eliza_stock', nextStock);
+        return nextStock;
+      });
       setDoc(doc(db, 'stock', `st_${id}`), { name: updates.name }, { merge: true }).catch(() => {});
     }
 
-    if (updatedProductData) {
-      setDoc(doc(db, 'products', id), cleanForFirestore(updatedProductData), { merge: true }).catch((err) => {
-        console.warn('Error updating product in Firestore:', err);
+    // 4. Grava diretamente e de forma garantida no Firestore
+    setDoc(doc(db, 'products', id), cleanForFirestore(updatedProduct), { merge: true })
+      .then(() => {
+        console.log(`[Firestore] Produto ${id} atualizado. Preço: R$ ${updatedProduct.price}`);
+      })
+      .catch((err) => {
+        console.warn('Erro ao atualizar produto no Firestore:', err);
       });
-    }
   };
 
   const deleteProduct = (id: string) => {
-    setProducts((prev) => prev.filter((p) => p.id !== id));
-    setCart((prev) => prev.filter((cartItem) => cartItem.productId !== id));
+    setProducts((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      safeStorage.set('eliza_products', next);
+      return next;
+    });
+    setCart((prev) => {
+      const next = prev.filter((cartItem) => cartItem.productId !== id);
+      safeStorage.set('eliza_cart', next);
+      return next;
+    });
 
     deleteDoc(doc(db, 'products', id)).catch((err) => {
       console.warn('Error deleting product from Firestore:', err);
