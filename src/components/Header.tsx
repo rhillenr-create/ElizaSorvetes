@@ -18,8 +18,11 @@ import {
   LogOut,
   Lock,
   Unlock,
-  Coins
+  Coins,
+  Eye,
+  EyeOff
 } from 'lucide-react';
+import { safeStorage } from '../utils/storage';
 
 export const Header: React.FC = () => {
   const { 
@@ -43,6 +46,12 @@ export const Header: React.FC = () => {
   const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
   const [headerCashModalOpen, setHeaderCashModalOpen] = useState<boolean>(false);
   const [headerCashModalMode, setHeaderCashModalMode] = useState<CashModalMode>('open');
+  const [isRevenueHidden, setIsRevenueHidden] = useState<boolean>(() => 
+    safeStorage.get<boolean>('eliza_hide_revenue', false)
+  );
+  const [isCashHidden, setIsCashHidden] = useState<boolean>(() => 
+    safeStorage.get<boolean>('eliza_hide_cash', false)
+  );
 
   useEffect(() => {
     const updateDateTime = () => {
@@ -228,33 +237,87 @@ export const Header: React.FC = () => {
               )}
             </div>
 
-            {/* Live Faturamento do Dia (Sincronizado automaticamente com o banco) */}
-            <div
+            {/* Live Entradas do Dia (Sincronizado automaticamente com o banco) - Toque para ocultar/mostrar */}
+            <button
+              type="button"
               id="header-daily-revenue-pill"
-              title={`Faturamento de hoje: R$ ${todayRevenue.toFixed(2).replace('.', ',')} (${todaySalesCount} ${todaySalesCount === 1 ? 'venda' : 'vendas'} sincronizadas no banco)`}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-200/80 text-[11px] sm:text-xs font-semibold shadow-2xs"
+              onClick={() => {
+                setIsRevenueHidden((prev) => {
+                  const next = !prev;
+                  safeStorage.set('eliza_hide_revenue', next);
+                  return next;
+                });
+              }}
+              title={
+                isRevenueHidden
+                  ? 'Valor oculto. Toque para exibir as entradas do dia.'
+                  : `Entradas de hoje: R$ ${todayRevenue.toFixed(2).replace('.', ',')} (${todaySalesCount} ${todaySalesCount === 1 ? 'venda' : 'vendas'}). Toque para ocultar o valor.`
+              }
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 hover:bg-rose-100/80 active:bg-rose-100 text-rose-800 border border-rose-200/80 text-[11px] sm:text-xs font-semibold shadow-2xs transition-all cursor-pointer select-none active:scale-95"
             >
-              <Coins className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-rose-500" />
-              <span className="hidden sm:inline text-stone-500 font-normal">Faturamento:</span>
-              <span className="font-mono font-bold text-rose-700">R$ {todayRevenue.toFixed(2).replace('.', ',')}</span>
-            </div>
+              <Coins className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-rose-500 shrink-0" />
+              <span className="hidden sm:inline text-stone-500 font-normal">Entradas:</span>
+              <span className={`font-mono font-bold text-rose-700 ${isRevenueHidden ? 'tracking-wider text-[10px] sm:text-[11px]' : ''}`}>
+                {isRevenueHidden ? '••••••' : `R$ ${todayRevenue.toFixed(2).replace('.', ',')}`}
+              </span>
+              {isRevenueHidden ? (
+                <EyeOff className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-rose-400 shrink-0" />
+              ) : (
+                <Eye className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-rose-400/70 hover:text-rose-600 shrink-0" />
+              )}
+            </button>
 
-            {/* Interactive Cash Shift Status (Clickable to manage register) */}
+            {/* Interactive Cash Shift Status - Toque no valor para ocultar/mostrar, ou clique em Gaveta para gerenciar */}
             {activeShift ? (
-              <button
-                type="button"
-                id="btn-header-shift-status"
-                onClick={() => {
-                  setHeaderCashModalMode('close');
-                  setHeaderCashModalOpen(true);
-                }}
-                title="Caixa aberto. Clique para registrar suprimento, sangria ou fechar caixa."
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer"
+              <div
+                id="header-shift-container"
+                className="flex items-center rounded-full bg-emerald-50 border border-emerald-200 text-[11px] sm:text-xs font-semibold text-emerald-800 shadow-2xs overflow-hidden"
               >
-                <Unlock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600" />
-                <span className="hidden xs:inline">Gaveta:</span>
-                <span className="font-mono">R$ {activeShift.expectedCash.toFixed(2).replace('.', ',')}</span>
-              </button>
+                {/* Clique em Gaveta/Cadeado para gerenciar suprimento/sangria/fechamento */}
+                <button
+                  type="button"
+                  id="btn-header-shift-status"
+                  onClick={() => {
+                    setHeaderCashModalMode('close');
+                    setHeaderCashModalOpen(true);
+                  }}
+                  title="Caixa aberto. Clique para registrar suprimento, sangria ou fechar caixa."
+                  className="flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 hover:bg-emerald-100/70 text-emerald-800 transition-colors cursor-pointer"
+                >
+                  <Unlock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
+                  <span className="hidden xs:inline">Gaveta:</span>
+                </button>
+
+                <div className="h-3 w-px bg-emerald-200/80 my-auto" />
+
+                {/* Toque no valor para ocultar/mostrar */}
+                <button
+                  type="button"
+                  id="btn-header-toggle-cash-val"
+                  onClick={() => {
+                    setIsCashHidden((prev) => {
+                      const next = !prev;
+                      safeStorage.set('eliza_hide_cash', next);
+                      return next;
+                    });
+                  }}
+                  title={
+                    isCashHidden
+                      ? 'Valor oculto. Toque para exibir o valor em caixa.'
+                      : `Valor na gaveta: R$ ${activeShift.expectedCash.toFixed(2).replace('.', ',')}. Toque para ocultar o valor.`
+                  }
+                  className="flex items-center gap-1 pl-1.5 pr-2.5 py-1 hover:bg-emerald-100/90 active:bg-emerald-100 text-emerald-800 transition-all cursor-pointer select-none active:scale-95"
+                >
+                  <span className={`font-mono ${isCashHidden ? 'tracking-wider text-[10px] sm:text-[11px]' : ''}`}>
+                    {isCashHidden ? '••••••' : `R$ ${activeShift.expectedCash.toFixed(2).replace('.', ',')}`}
+                  </span>
+                  {isCashHidden ? (
+                    <EyeOff className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600/80 shrink-0" />
+                  ) : (
+                    <Eye className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600/60 hover:text-emerald-800 shrink-0" />
+                  )}
+                </button>
+              </div>
             ) : (
               <button
                 type="button"
