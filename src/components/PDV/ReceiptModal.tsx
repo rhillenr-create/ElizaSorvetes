@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Sale } from '../../types';
 import { usePos } from '../../context/PosContext';
 import { formatBrazilDateTime } from '../../utils/dateUtils';
@@ -40,10 +41,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
   const [showPopupWarning, setShowPopupWarning] = useState<boolean>(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState<boolean>(false);
 
-  // Number of copies to print: 1 via (default) or 2 vias
-  const [printCopies, setPrintCopies] = useState<PrintCopies>(() => 
-    safeStorage.get<PrintCopies>('eliza_receipt_print_copies', 1)
-  );
+  // Number of copies: strictly 1 single copy per user specification
+  const printCopies = 1;
 
   // Print typography and layout preferences (saved in local storage)
   const [fontSize, setFontSize] = useState<PrintFontSize>(() => 
@@ -55,11 +54,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
   const [paperWidth, setPaperWidth] = useState<PrintPaperWidth>(() => 
     safeStorage.get<PrintPaperWidth>('eliza_receipt_paper_width', '80mm')
   );
-
-  const handleSetPrintCopies = (copies: PrintCopies) => {
-    setPrintCopies(copies);
-    safeStorage.set('eliza_receipt_print_copies', copies);
-  };
 
   const handleSetFontSize = (size: PrintFontSize) => {
     setFontSize(size);
@@ -107,16 +101,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
   const generateReceiptHtml = (
     currentFontSize: PrintFontSize = fontSize,
     currentFontFamily: PrintFontFamily = fontFamily,
-    currentPaperWidth: PrintPaperWidth = paperWidth,
-    currentCopies: PrintCopies = printCopies
+    currentPaperWidth: PrintPaperWidth = paperWidth
   ) => {
     const customer = sale.customerName?.trim() || 'Consumidor Final';
 
-    const renderTicketBody = (viaLabel: string) => `
+    const renderTicketBody = () => `
       <div class="text-center">
         <div class="store-title">ELIZA SORVETES</div>
         <div class="store-sub bold">Sorvetes & Picolés Artesanais</div>
-        <div class="via-badge">${viaLabel}</div>
         <div class="store-sub meta-row">CNPJ: 63.817.939/0001-63</div>
         <div class="store-sub meta-row">Cupom Não Fiscal: <b>${sale.id}</b></div>
         <div class="store-sub meta-row">${formattedDate}</div>
@@ -518,7 +510,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
   <div class="action-bar no-print">
     <div class="action-row-primary">
       <button class="print-main-btn" onclick="window.print()">
-        🖨️ <span id="main-print-label">Imprimir (${currentCopies === 1 ? '1 Via' : '2 Vias'})</span>
+        🖨️ <span id="main-print-label">Imprimir Cupom (1 Cópia)</span>
       </button>
       <button class="close-btn" onclick="window.close()">
         ✕ Fechar
@@ -528,10 +520,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
     <div class="settings-toolbar">
       <div class="toolbar-group">
         <span class="toolbar-label">Vias:</span>
-        <div class="btn-group">
-          <button class="tool-btn ${currentCopies === 1 ? 'active' : ''}" id="btn-copies-1" onclick="changeCopies(1)">1 Via</button>
-          <button class="tool-btn ${currentCopies === 2 ? 'active' : ''}" id="btn-copies-2" onclick="changeCopies(2)">2 Vias</button>
-        </div>
+        <span style="font-weight: 700; font-size: 11px; background: #e2e8f0; color: #0f172a; padding: 3px 8px; border-radius: 6px;">1 Cópia</span>
       </div>
 
       <div class="toolbar-group">
@@ -561,48 +550,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
     </div>
   </div>
 
-  <!-- Printable Receipt Card -->
+  <!-- Printable Receipt Card - Strictly 1 Single Copy -->
   <div id="receipt-card" class="ticket-card width-${currentPaperWidth} size-${currentFontSize}">
-    <div id="receipt-copy-1">
-      ${renderTicketBody('1ª VIA - CONSUMIDOR')}
-    </div>
-
-    <div id="receipt-cut-line" style="${currentCopies === 2 ? 'display: block;' : 'display: none;'}">
-      <div class="cut-divider">
-        - - - - - - ✂️ DESTACAR AQUI (2ª VIA) - - - - - -
-      </div>
-    </div>
-
-    <div id="receipt-copy-2" style="${currentCopies === 2 ? 'display: block;' : 'display: none;'}">
-      ${renderTicketBody('2ª VIA - ESTABELECIMENTO')}
-    </div>
+    ${renderTicketBody()}
   </div>
 
   <script>
-    function changeCopies(c) {
-      const copy2 = document.getElementById('receipt-copy-2');
-      const cutLine = document.getElementById('receipt-cut-line');
-      const mainLabel = document.getElementById('main-print-label');
-
-      if (c === 2) {
-        if (copy2) copy2.style.display = 'block';
-        if (cutLine) cutLine.style.display = 'block';
-        if (mainLabel) mainLabel.textContent = 'Imprimir (2 Vias)';
-      } else {
-        if (copy2) copy2.style.display = 'none';
-        if (cutLine) cutLine.style.display = 'none';
-        if (mainLabel) mainLabel.textContent = 'Imprimir (1 Via)';
-      }
-
-      document.querySelectorAll('#btn-copies-1, #btn-copies-2').forEach(btn => btn.classList.remove('active'));
-      const activeBtn = document.getElementById('btn-copies-' + c);
-      if (activeBtn) activeBtn.classList.add('active');
-
-      try {
-        localStorage.setItem('eliza_receipt_print_copies', JSON.stringify(c));
-      } catch(e) {}
-    }
-
     function changeSize(size) {
       const card = document.getElementById('receipt-card');
       card.classList.remove('size-normal', 'size-large', 'size-xlarge');
@@ -667,14 +620,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
   // Generate Blob URL for instant, unblockable navigation & printing
   const receiptBlobUrl = useMemo(() => {
     try {
-      const html = generateReceiptHtml(fontSize, fontFamily, paperWidth, printCopies);
+      const html = generateReceiptHtml(fontSize, fontFamily, paperWidth);
       const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
       return URL.createObjectURL(blob);
     } catch (e) {
       console.error('Error generating receipt blob url', e);
       return '';
     }
-  }, [sale, fontSize, fontFamily, paperWidth, printCopies]);
+  }, [sale, fontSize, fontFamily, paperWidth]);
 
   useEffect(() => {
     return () => {
@@ -849,41 +802,18 @@ ${doubleLine}`;
               Opções de Impressão & Legibilidade
             </span>
             <span className="text-[11px] text-stone-500">
-              {printCopies === 1 ? '1 Via' : '2 Vias'} • {fontSize === 'xlarge' ? 'Extra Grande' : fontSize === 'large' ? 'Grande' : 'Padrão'} • {fontFamily === 'modern' ? 'Nítida' : 'Mono'}
+              1 Cópia • {fontSize === 'xlarge' ? 'Extra Grande' : fontSize === 'large' ? 'Grande' : 'Padrão'} • {fontFamily === 'modern' ? 'Nítida' : 'Mono'}
             </span>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {/* Vias (1 via / 2 vias) */}
+            {/* Vias (1 Cópia única) */}
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-stone-500 uppercase flex items-center gap-1">
                 <Copy className="w-3 h-3" /> Vias
               </label>
-              <div className="flex bg-white rounded-lg p-0.5 border border-stone-200 shadow-2xs">
-                <button
-                  type="button"
-                  id="modal-copies-1-btn"
-                  onClick={() => handleSetPrintCopies(1)}
-                  className={`flex-1 py-1 text-[11px] rounded font-semibold transition-all ${
-                    printCopies === 1 
-                      ? 'bg-stone-900 text-white shadow-2xs' 
-                      : 'text-stone-600 hover:text-stone-900'
-                  }`}
-                >
-                  1 Via
-                </button>
-                <button
-                  type="button"
-                  id="modal-copies-2-btn"
-                  onClick={() => handleSetPrintCopies(2)}
-                  className={`flex-1 py-1 text-[11px] rounded font-semibold transition-all ${
-                    printCopies === 2 
-                      ? 'bg-stone-900 text-white shadow-2xs' 
-                      : 'text-stone-600 hover:text-stone-900'
-                  }`}
-                >
-                  2 Vias
-                </button>
+              <div className="flex bg-stone-200/80 rounded-lg px-2.5 py-1 text-[11px] font-bold text-stone-800 border border-stone-300/60 shadow-2xs items-center justify-center">
+                1 Cópia
               </div>
             </div>
 
@@ -1199,7 +1129,7 @@ ${doubleLine}`;
               className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer active:scale-[0.99] text-center"
             >
               <Printer className="w-4 h-4" />
-              <span>Imprimir Cupom ({printCopies === 1 ? '1 Via' : '2 Vias'})</span>
+              <span>Imprimir Cupom (1 Cópia)</span>
             </a>
           ) : (
             <button
@@ -1209,7 +1139,7 @@ ${doubleLine}`;
               className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer active:scale-[0.99]"
             >
               <Printer className="w-4 h-4" />
-              <span>Imprimir Cupom ({printCopies === 1 ? '1 Via' : '2 Vias'})</span>
+              <span>Imprimir Cupom (1 Cópia)</span>
             </button>
           )}
 
@@ -1224,6 +1154,98 @@ ${doubleLine}`;
           </button>
         </div>
       </div>
+
+      {/* Portal dedicated 1-page receipt directly into #print-root for isolated, single-page print */}
+      {typeof document !== 'undefined' && document.getElementById('print-root') && createPortal(
+        <div 
+          className={`pos-receipt-print ${paperWidth === '58mm' ? 'print-paper-58mm' : ''} ${
+            fontFamily === 'modern' ? 'font-sans' : 'print-font-mono font-mono'
+          } ${
+            fontSize === 'xlarge' ? 'print-size-xlarge' : fontSize === 'large' ? 'print-size-large' : ''
+          }`}
+        >
+          {/* Store Header */}
+          <div className="text-center pb-2 border-b-2 border-dashed border-black">
+            <p className="font-black text-sm tracking-wider uppercase">
+              Eliza Sorvetes
+            </p>
+            <p className="text-xs font-semibold text-black">Sorvetes & Picolés Artesanais</p>
+            <p className="text-[11px] font-medium text-black mt-0.5">CNPJ: 63.817.939/0001-63</p>
+            <p className="text-[11px] font-bold text-black mt-0.5">Cupom Não Fiscal: {sale.id}</p>
+            <p className="text-[11px] font-medium text-black">{formattedDate}</p>
+            <div className="mt-1.5 pt-1.5 border-t border-dashed border-black text-left">
+              <p className="text-xs text-black">
+                <span className="font-bold">Cliente:</span>{' '}
+                <span className="font-extrabold">{sale.customerName || 'Consumidor Final'}</span>
+              </p>
+              <p className="text-[11px] text-black">
+                <span>Operador(a):</span>{' '}
+                <span className="font-bold">{sale.cashierName || 'Eliza'}</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Item list */}
+          <div className="space-y-1.5 py-2 border-b-2 border-dashed border-black">
+            <div className="font-extrabold text-[11px] tracking-wider uppercase text-black">
+              Itens da Venda:
+            </div>
+            {sale.items.map((item, idx) => (
+              <div key={idx} className="space-y-0.5">
+                <div className="flex justify-between font-bold text-black">
+                  <span className="pr-2">
+                    <b>{item.quantity}x</b> {item.productName}
+                  </span>
+                  <span className="whitespace-nowrap font-black">
+                    R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}
+                  </span>
+                </div>
+                {item.selectedFlavors.length > 0 && (
+                  <p className="text-xs text-black font-medium pl-2">
+                    • Sabor: {item.selectedFlavors.join(' + ')}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Financial Details */}
+          <div className="space-y-1.5 pt-2 text-black">
+            <div className="flex justify-between text-xs font-semibold">
+              <span>Subtotal:</span>
+              <span>R$ {sale.subtotal.toFixed(2).replace('.', ',')}</span>
+            </div>
+            <div className="flex justify-between font-black border-y-2 border-black py-1.5 my-1 text-sm">
+              <span>TOTAL:</span>
+              <span>R$ {sale.total.toFixed(2).replace('.', ',')}</span>
+            </div>
+            <div className="flex justify-between text-xs font-semibold">
+              <span>Pagamento:</span>
+              <span className="font-extrabold">{getPaymentName(sale.paymentMethod)}</span>
+            </div>
+
+            {sale.paymentMethod === 'dinheiro' && sale.amountReceived !== undefined && (
+              <>
+                <div className="flex justify-between text-xs font-semibold">
+                  <span>Valor Recebido:</span>
+                  <span>R$ {sale.amountReceived.toFixed(2).replace('.', ',')}</span>
+                </div>
+                <div className="flex justify-between font-extrabold text-xs border border-black/40 px-2 py-1">
+                  <span>Troco:</span>
+                  <span className="font-black">R$ ${(sale.change || 0).toFixed(2).replace('.', ',')}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Footer note */}
+          <div className="text-center pt-2 text-xs font-bold text-black border-t border-dashed border-black mt-2">
+            <div>Obrigado pela preferência!</div>
+            <div className="font-extrabold mt-0.5">Volte Sempre!</div>
+          </div>
+        </div>,
+        document.getElementById('print-root')!
+      )}
     </div>
   );
 };

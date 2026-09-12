@@ -12,39 +12,55 @@
   }
 }
 
+#print-root {
+  display: none;
+}
+
 @media print {
-  /* Hide everything else when printing from main window */
+  @page {
+    size: auto;
+    margin: 0mm !important;
+  }
+
   html, body {
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
+    color: #000000 !important;
     height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     overflow: visible !important;
-    color: #000000 !important;
   }
 
-  body * {
-    visibility: hidden !important;
+  /* Completely eliminate #root from print layout - eliminates 5 pages of hidden app DOM */
+  #root {
+    display: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
   }
 
-  /* Only show the receipt paper and cash shift receipt */
-  #printable-receipt,
-  #printable-receipt *,
-  #cash-shift-receipt-print,
-  #cash-shift-receipt-print * {
-    visibility: visible !important;
-    color: #000000 !important;
-    text-shadow: none !important;
+  /* Show ONLY #print-root in the print engine */
+  #print-root {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
   }
 
-  #printable-receipt {
-    position: fixed !important;
-    left: 0 !important;
-    top: 0 !important;
+  /* The ticket inside print-root (standard static flow, strictly 1 single page) */
+  #print-root .pos-receipt-print,
+  #print-root .pos-shift-receipt-print {
+    display: block !important;
+    position: static !important;
+    box-sizing: border-box !important;
     width: 78mm !important;
     max-width: 100% !important;
-    margin: 0 !important;
-    padding: 6px !important;
+    margin: 0 auto !important;
+    padding: 3mm 0 !important;
     background: #ffffff !important;
     color: #000000 !important;
     border: none !important;
@@ -53,50 +69,32 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
     -webkit-font-smoothing: antialiased;
-    z-index: 99999999 !important;
     line-height: 1.35 !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
+    page-break-before: avoid !important;
+    break-before: avoid !important;
     page-break-after: avoid !important;
     break-after: avoid !important;
   }
 
-  #printable-receipt.print-paper-58mm {
+  #print-root .pos-receipt-print.print-paper-58mm,
+  #print-root .pos-shift-receipt-print.print-paper-58mm {
     width: 54mm !important;
   }
 
-  #printable-receipt.print-font-mono {
+  #print-root .pos-receipt-print.print-font-mono,
+  #print-root .pos-shift-receipt-print.print-font-mono {
     font-family: 'Consolas', 'Courier New', Courier, monospace !important;
   }
 
-  #printable-receipt.print-size-large {
+  #print-root .pos-receipt-print.print-size-large,
+  #print-root .pos-shift-receipt-print.print-size-large {
     font-size: 15px !important;
   }
 
-  #printable-receipt.print-size-xlarge {
+  #print-root .pos-receipt-print.print-size-xlarge,
+  #print-root .pos-shift-receipt-print.print-size-xlarge {
     font-size: 17px !important;
-  }
-
-  #cash-shift-receipt-print {
-    position: fixed !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 78mm !important;
-    max-width: 100% !important;
-    margin: 0 !important;
-    padding: 6px !important;
-    background: #ffffff !important;
-    color: #000000 !important;
-    border: none !important;
-    box-shadow: none !important;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    z-index: 99999999 !important;
-  }
-
-  @page {
-    size: auto;
-    margin: 0mm;
   }
 }

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { usePos } from '../../context/PosContext';
 import { CashShift, CashMovementType } from '../../types';
 import { formatBrazilDateTime } from '../../utils/dateUtils';
@@ -697,6 +698,102 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           </div>
         )}
       </div>
+
+      {/* Portal receipt directly to #print-root for isolated single-page print */}
+      {mode === 'receipt' && receiptShift && typeof document !== 'undefined' && document.getElementById('print-root') && createPortal(
+        <div className="pos-shift-receipt-print">
+          <div className="text-center pb-3 border-b-2 border-dashed border-black">
+            <h4 className="font-black text-sm tracking-wider uppercase">Eliza Sorvetes Artesanais</h4>
+            <p className="text-xs font-bold text-black uppercase mt-0.5">Comprovante de Fechamento de Caixa</p>
+            <p className="text-[11px] font-medium text-black">Turno: <b>{receiptShift.id}</b></p>
+          </div>
+
+          <div className="space-y-1 text-xs pb-2 border-b-2 border-dashed border-black text-black">
+            <div className="flex justify-between">
+              <span className="font-semibold">Operador:</span>
+              <span className="font-extrabold">{receiptShift.operatorName}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Abertura:</span>
+              <span className="font-medium">{formatBrazilDateTime(receiptShift.openedAt)}</span>
+            </div>
+            {receiptShift.closedAt && (
+              <div className="flex justify-between">
+                <span>Fechamento:</span>
+                <span className="font-medium">{formatBrazilDateTime(receiptShift.closedAt)}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span>Status:</span>
+              <span className="font-black">
+                {receiptShift.status === 'aberto' ? 'EM ABERTO' : 'FECHADO'}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 text-xs pb-2 border-b-2 border-dashed border-black text-black">
+            <div className="flex justify-between">
+              <span>Fundo de Troco Inicial:</span>
+              <span className="font-extrabold">R$ {receiptShift.initialCash.toFixed(2).replace('.', ',')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Vendas em Dinheiro:</span>
+              <span className="font-extrabold">R$ {receiptShift.totalCashSales.toFixed(2).replace('.', ',')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Vendas em Pix:</span>
+              <span className="font-semibold">R$ {receiptShift.totalPixSales.toFixed(2).replace('.', ',')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Vendas em Cartão Débito:</span>
+              <span className="font-semibold">R$ {receiptShift.totalDebitSales.toFixed(2).replace('.', ',')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Vendas em Cartão Crédito:</span>
+              <span className="font-semibold">R$ {receiptShift.totalCreditSales.toFixed(2).replace('.', ',')}</span>
+            </div>
+            <div className="flex justify-between pt-1.5 border-t border-black font-black text-sm">
+              <span>FATURAMENTO TOTAL:</span>
+              <span>R$ {receiptShift.totalSalesAmount.toFixed(2).replace('.', ',')}</span>
+            </div>
+            <div className="flex justify-between text-black text-[11px] font-medium">
+              <span>Vendas Realizadas:</span>
+              <span className="font-bold">{receiptShift.totalSalesCount} transações</span>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 text-xs pt-1 text-black">
+            <div className="flex justify-between font-black">
+              <span>Saldo Esperado em Gaveta:</span>
+              <span>R$ {receiptShift.expectedCash.toFixed(2).replace('.', ',')}</span>
+            </div>
+            {receiptShift.countedCash !== undefined && (
+              <div className="flex justify-between font-black">
+                <span>Dinheiro Contado:</span>
+                <span>R$ {receiptShift.countedCash.toFixed(2).replace('.', ',')}</span>
+              </div>
+            )}
+            {receiptShift.difference !== undefined && (
+              <div className="flex justify-between font-black text-xs pt-1 border-t border-black">
+                <span>DIFERENÇA:</span>
+                <span>
+                  {receiptShift.difference > 0 && '+'}
+                  R$ {receiptShift.difference.toFixed(2).replace('.', ',')}
+                  {receiptShift.difference === 0 ? ' (Bateu Exato)' : receiptShift.difference < 0 ? ' (Falta)' : ' (Sobra)'}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {receiptShift.notes && (
+            <div className="pt-2 border-t-2 border-dashed border-black text-xs text-black">
+              <span className="font-bold block">Obs:</span>
+              <span>{receiptShift.notes}</span>
+            </div>
+          )}
+        </div>,
+        document.getElementById('print-root')!
+      )}
     </div>
   );
 };
