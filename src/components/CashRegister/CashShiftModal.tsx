@@ -582,82 +582,82 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           <div className="p-5 space-y-4">
             <div 
               id="cash-shift-receipt-print" 
-              className="p-5 bg-stone-50 rounded-2xl border border-stone-200 font-mono text-xs text-stone-800 space-y-3 shadow-inner"
+              className="p-5 bg-white rounded-2xl border border-stone-300 font-sans text-xs text-black space-y-3 shadow-sm"
             >
-              <div className="text-center pb-3 border-b border-dashed border-stone-300">
-                <h4 className="font-bold text-sm tracking-wider uppercase">Eliza Sorvetes Artesanais</h4>
-                <p className="text-[10px] text-stone-500">COMPROVANTE DE FECHAMENTO DE CAIXA</p>
-                <p className="text-[10px] text-stone-500">Turno: {receiptShift.id}</p>
+              <div className="text-center pb-3 border-b-2 border-dashed border-black">
+                <h4 className="font-black text-sm tracking-wider uppercase">Eliza Sorvetes Artesanais</h4>
+                <p className="text-xs font-bold text-black uppercase mt-0.5">Comprovante de Fechamento de Caixa</p>
+                <p className="text-[11px] font-medium text-black">Turno: <b>{receiptShift.id}</b></p>
               </div>
 
-              <div className="space-y-1 text-[11px] pb-2 border-b border-dashed border-stone-300">
+              <div className="space-y-1 text-xs pb-2 border-b-2 border-dashed border-black text-black">
                 <div className="flex justify-between">
-                  <span className="text-stone-500">Operador:</span>
-                  <span className="font-bold">{receiptShift.operatorName}</span>
+                  <span className="font-semibold">Operador:</span>
+                  <span className="font-extrabold">{receiptShift.operatorName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-stone-500">Abertura:</span>
-                  <span>{formatBrazilDateTime(receiptShift.openedAt)}</span>
+                  <span>Abertura:</span>
+                  <span className="font-medium">{formatBrazilDateTime(receiptShift.openedAt)}</span>
                 </div>
                 {receiptShift.closedAt && (
                   <div className="flex justify-between">
-                    <span className="text-stone-500">Fechamento:</span>
-                    <span>{formatBrazilDateTime(receiptShift.closedAt)}</span>
+                    <span>Fechamento:</span>
+                    <span className="font-medium">{formatBrazilDateTime(receiptShift.closedAt)}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-stone-500">Status:</span>
-                  <span className={`font-bold ${receiptShift.status === 'aberto' ? 'text-emerald-700' : 'text-stone-800'}`}>
+                  <span>Status:</span>
+                  <span className={`font-black ${receiptShift.status === 'aberto' ? 'text-emerald-700' : 'text-black'}`}>
                     {receiptShift.status === 'aberto' ? 'EM ABERTO' : 'FECHADO'}
                   </span>
                 </div>
               </div>
 
-              <div className="space-y-1.5 text-[11px] pb-2 border-b border-dashed border-stone-300">
+              <div className="space-y-1.5 text-xs pb-2 border-b-2 border-dashed border-black text-black">
                 <div className="flex justify-between">
                   <span>Fundo de Troco Inicial:</span>
-                  <span className="font-bold">R$ {receiptShift.initialCash.toFixed(2).replace('.', ',')}</span>
+                  <span className="font-extrabold">R$ {receiptShift.initialCash.toFixed(2).replace('.', ',')}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Vendas em Dinheiro:</span>
-                  <span className="font-bold">R$ {receiptShift.totalCashSales.toFixed(2).replace('.', ',')}</span>
+                  <span className="font-extrabold">R$ {receiptShift.totalCashSales.toFixed(2).replace('.', ',')}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Vendas em Pix:</span>
-                  <span>R$ {receiptShift.totalPixSales.toFixed(2).replace('.', ',')}</span>
+                  <span className="font-semibold">R$ {receiptShift.totalPixSales.toFixed(2).replace('.', ',')}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Vendas em Cartão Débito:</span>
-                  <span>R$ {receiptShift.totalDebitSales.toFixed(2).replace('.', ',')}</span>
+                  <span className="font-semibold">R$ {receiptShift.totalDebitSales.toFixed(2).replace('.', ',')}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Vendas em Cartão Crédito:</span>
-                  <span>R$ {receiptShift.totalCreditSales.toFixed(2).replace('.', ',')}</span>
+                  <span className="font-semibold">R$ {receiptShift.totalCreditSales.toFixed(2).replace('.', ',')}</span>
                 </div>
-                <div className="flex justify-between pt-1 border-t border-stone-200 font-bold">
+                <div className="flex justify-between pt-1.5 border-t border-black font-black text-sm">
                   <span>FATURAMENTO TOTAL:</span>
                   <span>R$ {receiptShift.totalSalesAmount.toFixed(2).replace('.', ',')}</span>
                 </div>
-                <div className="flex justify-between text-stone-500 text-[10px]">
+                <div className="flex justify-between text-black text-[11px] font-medium">
                   <span>Vendas Realizadas:</span>
-                  <span>{receiptShift.totalSalesCount} transações</span>
+                  <span className="font-bold">{receiptShift.totalSalesCount} transações</span>
                 </div>
               </div>
 
               {/* Cash Reconciliation */}
-              <div className="space-y-1.5 text-[11px] pt-1">
-                <div className="flex justify-between font-bold">
+              <div className="space-y-1.5 text-xs pt-1 text-black">
+                <div className="flex justify-between font-black">
                   <span>Saldo Esperado em Gaveta:</span>
                   <span>R$ {receiptShift.expectedCash.toFixed(2).replace('.', ',')}</span>
                 </div>
                 {receiptShift.countedCash !== undefined && (
-                  <div className="flex justify-between font-bold">
+                  <div className="flex justify-between font-black">
                     <span>Dinheiro Contado:</span>
                     <span>R$ {receiptShift.countedCash.toFixed(2).replace('.', ',')}</span>
                   </div>
                 )}
                 {receiptShift.difference !== undefined && (
-                  <div className="flex justify-between font-bold text-xs pt-1 border-t border-stone-200">
+                  <div className="flex justify-between font-black text-xs pt-1 border-t border-black">
                     <span>DIFERENÇA:</span>
                     <span className={receiptShift.difference < 0 ? 'text-rose-700' : receiptShift.difference > 0 ? 'text-sky-700' : 'text-emerald-700'}>
                       {receiptShift.difference > 0 && '+'}
@@ -669,8 +669,8 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
               </div>
 
               {receiptShift.notes && (
-                <div className="pt-2 border-t border-dashed border-stone-300 text-[10px] text-stone-600">
-                  <span className="font-semibold block">Obs:</span>
+                <div className="pt-2 border-t-2 border-dashed border-black text-xs text-black">
+                  <span className="font-bold block">Obs:</span>
                   <span>{receiptShift.notes}</span>
                 </div>
               )}

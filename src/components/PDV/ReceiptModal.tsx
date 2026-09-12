@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Sale } from '../../types';
 import { usePos } from '../../context/PosContext';
 import { formatBrazilDateTime } from '../../utils/dateUtils';
+import { safeStorage } from '../../utils/storage';
 import { 
   CheckCircle, 
   Printer, 
@@ -14,8 +15,15 @@ import {
   Info,
   AlertCircle,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Type,
+  SlidersHorizontal
 } from 'lucide-react';
+
+type PrintFontSize = 'normal' | 'large' | 'xlarge';
+type PrintFontFamily = 'modern' | 'mono';
+type PrintPaperWidth = '80mm' | '58mm';
+type PrintCopies = 1 | 2;
 
 interface ReceiptModalProps {
   sale: Sale | null;
@@ -31,6 +39,42 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
   const [printStatus, setPrintStatus] = useState<string | null>(null);
   const [showPopupWarning, setShowPopupWarning] = useState<boolean>(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState<boolean>(false);
+
+  // Number of copies to print: 1 via (default) or 2 vias
+  const [printCopies, setPrintCopies] = useState<PrintCopies>(() => 
+    safeStorage.get<PrintCopies>('eliza_receipt_print_copies', 1)
+  );
+
+  // Print typography and layout preferences (saved in local storage)
+  const [fontSize, setFontSize] = useState<PrintFontSize>(() => 
+    safeStorage.get<PrintFontSize>('eliza_receipt_font_size', 'large')
+  );
+  const [fontFamily, setFontFamily] = useState<PrintFontFamily>(() => 
+    safeStorage.get<PrintFontFamily>('eliza_receipt_font_family', 'modern')
+  );
+  const [paperWidth, setPaperWidth] = useState<PrintPaperWidth>(() => 
+    safeStorage.get<PrintPaperWidth>('eliza_receipt_paper_width', '80mm')
+  );
+
+  const handleSetPrintCopies = (copies: PrintCopies) => {
+    setPrintCopies(copies);
+    safeStorage.set('eliza_receipt_print_copies', copies);
+  };
+
+  const handleSetFontSize = (size: PrintFontSize) => {
+    setFontSize(size);
+    safeStorage.set('eliza_receipt_font_size', size);
+  };
+
+  const handleSetFontFamily = (family: PrintFontFamily) => {
+    setFontFamily(family);
+    safeStorage.set('eliza_receipt_font_family', family);
+  };
+
+  const handleSetPaperWidth = (width: PrintPaperWidth) => {
+    setPaperWidth(width);
+    safeStorage.set('eliza_receipt_paper_width', width);
+  };
 
   const handleConfirmCancelSale = () => {
     deleteSale(sale.id, true);
@@ -60,8 +104,91 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
     }
   };
 
-  const generateReceiptHtml = () => {
+  const generateReceiptHtml = (
+    currentFontSize: PrintFontSize = fontSize,
+    currentFontFamily: PrintFontFamily = fontFamily,
+    currentPaperWidth: PrintPaperWidth = paperWidth,
+    currentCopies: PrintCopies = printCopies
+  ) => {
     const customer = sale.customerName?.trim() || 'Consumidor Final';
+
+    const renderTicketBody = (viaLabel: string) => `
+      <div class="text-center">
+        <div class="store-title">ELIZA SORVETES</div>
+        <div class="store-sub bold">Sorvetes & Picolés Artesanais</div>
+        <div class="via-badge">${viaLabel}</div>
+        <div class="store-sub meta-row">CNPJ: 63.817.939/0001-63</div>
+        <div class="store-sub meta-row">Cupom Não Fiscal: <b>${sale.id}</b></div>
+        <div class="store-sub meta-row">${formattedDate}</div>
+      </div>
+
+      <div class="dashed-line"></div>
+
+      <div>
+        <div class="row meta-row">
+          <span class="bold">CLIENTE:</span>
+          <span class="bold">${customer}</span>
+        </div>
+        <div class="row meta-row">
+          <span>Operador(a):</span>
+          <span class="bold">${sale.cashierName || 'Eliza'}</span>
+        </div>
+      </div>
+
+      <div class="dashed-line"></div>
+
+      <div class="bold" style="margin-bottom: 6px; letter-spacing: 0.3px;">ITENS DA VENDA:</div>
+      <div>
+        ${sale.items.map((item) => `
+          <div class="item-group">
+            <div class="item-row">
+              <span class="item-name"><b>${item.quantity}x</b> ${item.productName}</span>
+              <span class="item-price">R$ ${(item.price * item.quantity).toFixed(2).replace('.', ',')}</span>
+            </div>
+            ${item.selectedFlavors.length > 0 ? `
+              <div class="item-flavor">• Sabor: ${item.selectedFlavors.join(' + ')}</div>
+            ` : ''}
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="dashed-line"></div>
+
+      <div>
+        <div class="row">
+          <span>Subtotal:</span>
+          <span class="bold">R$ ${sale.subtotal.toFixed(2).replace('.', ',')}</span>
+        </div>
+        
+        <div class="total-box">
+          <span class="total-val bold">TOTAL A PAGAR:</span>
+          <span class="total-val extra-bold">R$ ${sale.total.toFixed(2).replace('.', ',')}</span>
+        </div>
+
+        <div class="row">
+          <span>Forma de Pagamento:</span>
+          <span class="bold">${getPaymentName(sale.paymentMethod)}</span>
+        </div>
+
+        ${sale.paymentMethod === 'dinheiro' && sale.amountReceived !== undefined ? `
+          <div class="row">
+            <span>Valor Recebido:</span>
+            <span class="bold">R$ ${sale.amountReceived.toFixed(2).replace('.', ',')}</span>
+          </div>
+          <div class="row bold">
+            <span>Troco Devolvido:</span>
+            <span class="bold">R$ ${(sale.change || 0).toFixed(2).replace('.', ',')}</span>
+          </div>
+        ` : ''}
+      </div>
+
+      <div class="dashed-line"></div>
+
+      <div class="footer">
+        <div>Obrigado pela preferência!</div>
+        <div class="bold" style="margin-top: 2px;">Volte Sempre!</div>
+      </div>
+    `;
 
     return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -71,205 +198,458 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
   <title>Cupom - ${sale.id} - Eliza Sorvetes</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    
     body {
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 13px;
-      line-height: 1.35;
-      color: #000;
-      background: #f5f5f4;
-      padding: 16px;
+      background: #f1f5f9;
+      color: #000000;
+      padding: 16px 8px;
+      -webkit-font-smoothing: antialiased;
     }
+
+    /* Font Family options */
+    body.font-modern {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    body.font-mono {
+      font-family: 'Consolas', 'Courier New', Courier, monospace;
+    }
+
     .action-bar {
-      max-width: 80mm;
-      margin: 0 auto 12px auto;
+      max-width: 82mm;
+      margin: 0 auto 14px auto;
       display: flex;
       flex-direction: column;
+      gap: 10px;
+      background: #ffffff;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid #cbd5e1;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+
+    .action-row-primary {
+      display: flex;
       gap: 8px;
     }
+
     .print-main-btn {
-      background: #0f766e;
+      flex: 1;
+      background: #047857;
       color: #ffffff;
       border: none;
-      padding: 12px 16px;
+      padding: 12px 14px;
       border-radius: 8px;
       font-size: 15px;
-      font-weight: bold;
+      font-weight: 700;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 6px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      transition: background 0.15s;
     }
     .print-main-btn:hover {
-      background: #115e59;
+      background: #065f46;
     }
+
     .close-btn {
-      background: #e7e5e4;
-      color: #44403c;
+      background: #e2e8f0;
+      color: #334155;
       border: none;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: bold;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
       cursor: pointer;
     }
+    .close-btn:hover {
+      background: #cbd5e1;
+    }
+
+    .settings-toolbar {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed #cbd5e1;
+      font-size: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .toolbar-label {
+      color: #475569;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 4px;
+    }
+
+    .tool-btn {
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #1e293b;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tool-btn.active {
+      background: #0f172a;
+      color: #ffffff;
+      border-color: #0f172a;
+    }
+
+    /* Ticket Card Container */
     .ticket-card {
+      margin: 0 auto;
+      background: #ffffff;
+      color: #000000;
+      padding: 16px 12px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.1);
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+    }
+
+    /* Paper Widths */
+    .ticket-card.width-80mm {
       width: 78mm;
       max-width: 100%;
-      margin: 0 auto;
-      background: #fff;
-      padding: 16px 12px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-      border-radius: 4px;
     }
+    .ticket-card.width-58mm {
+      width: 56mm;
+      max-width: 100%;
+    }
+
+    /* Font Sizes - High readability scales */
+    .ticket-card.size-normal {
+      font-size: 13.5px;
+      line-height: 1.4;
+    }
+    .ticket-card.size-normal .store-title { font-size: 18px; }
+    .ticket-card.size-normal .store-sub { font-size: 12px; }
+    .ticket-card.size-normal .item-row { font-size: 13.5px; }
+    .ticket-card.size-normal .item-flavor { font-size: 11.5px; }
+    .ticket-card.size-normal .total-val { font-size: 16.5px; }
+    .ticket-card.size-normal .meta-row { font-size: 12px; }
+
+    .ticket-card.size-large {
+      font-size: 15.5px;
+      line-height: 1.42;
+    }
+    .ticket-card.size-large .store-title { font-size: 21px; }
+    .ticket-card.size-large .store-sub { font-size: 13.5px; }
+    .ticket-card.size-large .item-row { font-size: 15px; }
+    .ticket-card.size-large .item-flavor { font-size: 13px; }
+    .ticket-card.size-large .total-val { font-size: 19px; }
+    .ticket-card.size-large .meta-row { font-size: 13.5px; }
+
+    .ticket-card.size-xlarge {
+      font-size: 17.5px;
+      line-height: 1.45;
+    }
+    .ticket-card.size-xlarge .store-title { font-size: 24px; }
+    .ticket-card.size-xlarge .store-sub { font-size: 15px; }
+    .ticket-card.size-xlarge .item-row { font-size: 17px; }
+    .ticket-card.size-xlarge .item-flavor { font-size: 14.5px; }
+    .ticket-card.size-xlarge .total-val { font-size: 22px; }
+    .ticket-card.size-xlarge .meta-row { font-size: 15px; }
+
     .text-center { text-align: center; }
     .text-right { text-align: right; }
-    .bold { font-weight: bold; }
+    .bold { font-weight: 700; }
+    .extra-bold { font-weight: 800; }
+    
     .dashed-line {
-      border-bottom: 1px dashed #000;
-      margin: 8px 0;
+      border-bottom: 1.5px dashed #000000;
+      margin: 10px 0;
     }
-    .double-line {
-      border-bottom: 2px solid #000;
-      margin: 8px 0;
+
+    .solid-line {
+      border-bottom: 2px solid #000000;
+      margin: 10px 0;
     }
+
     .row {
       display: flex;
       justify-content: space-between;
+      align-items: flex-start;
       margin-bottom: 4px;
     }
+
     .store-title {
-      font-size: 16px;
-      font-weight: bold;
+      font-weight: 800;
       letter-spacing: 0.5px;
-      font-family: Arial, Helvetica, sans-serif;
+      text-transform: uppercase;
+      margin-bottom: 2px;
     }
+
     .store-sub {
-      font-size: 11px;
+      color: #000000;
+      font-weight: 500;
     }
-    .item-flavors {
-      font-size: 11px;
-      font-style: italic;
+
+    .item-group {
+      margin-bottom: 6px;
+    }
+
+    .item-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      font-weight: 600;
+    }
+
+    .item-name {
+      word-break: break-word;
+      padding-right: 6px;
+    }
+
+    .item-price {
+      white-space: nowrap;
+      font-weight: 700;
+    }
+
+    .item-flavor {
+      color: #000000;
+      font-weight: 600;
       padding-left: 8px;
-      margin-bottom: 4px;
+      margin-top: 1px;
     }
-    .total-row {
-      font-size: 15px;
-      font-weight: bold;
-      margin: 6px 0;
+
+    .total-box {
+      border-top: 2px solid #000000;
+      border-bottom: 2px solid #000000;
+      padding: 6px 0;
+      margin: 8px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 800;
     }
+
     .footer {
       text-align: center;
-      font-size: 11px;
       margin-top: 12px;
+      font-weight: 600;
     }
+
+    .via-badge {
+      display: inline-block;
+      margin: 4px auto;
+      padding: 2px 8px;
+      background: #000000;
+      color: #ffffff !important;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .cut-divider {
+      margin: 14px 0;
+      padding: 6px 0;
+      border-top: 2px dashed #000000;
+      border-bottom: 2px dashed #000000;
+      text-align: center;
+      font-weight: 800;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+    }
+
     @media print {
       body {
-        background: #fff !important;
+        background: #ffffff !important;
         padding: 0 !important;
         margin: 0 !important;
+        color: #000000 !important;
       }
+
       .action-bar, .no-print {
         display: none !important;
       }
+
       .ticket-card {
         width: 100% !important;
         box-shadow: none !important;
         border-radius: 0 !important;
-        padding: 4px 0 !important;
+        border: none !important;
+        padding: 2px 0 !important;
+        margin: 0 !important;
+        color: #000000 !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
       }
+
+      * {
+        color: #000000 !important;
+        text-shadow: none !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
       @page {
-        size: 80mm auto;
-        margin: 2mm;
+        size: auto;
+        margin: 0mm;
       }
     }
   </style>
 </head>
-<body>
+<body class="${currentFontFamily === 'modern' ? 'font-modern' : 'font-mono'}">
+
+  <!-- Top Action & Typography Controls Bar (Hidden automatically when printing) -->
   <div class="action-bar no-print">
-    <button class="print-main-btn" onclick="window.print()">
-      🖨️ Imprimir Cupom Térmico
-    </button>
-    <button class="close-btn" onclick="window.close()">
-      ✕ Fechar Aba
-    </button>
+    <div class="action-row-primary">
+      <button class="print-main-btn" onclick="window.print()">
+        🖨️ <span id="main-print-label">Imprimir (${currentCopies === 1 ? '1 Via' : '2 Vias'})</span>
+      </button>
+      <button class="close-btn" onclick="window.close()">
+        ✕ Fechar
+      </button>
+    </div>
+
+    <div class="settings-toolbar">
+      <div class="toolbar-group">
+        <span class="toolbar-label">Vias:</span>
+        <div class="btn-group">
+          <button class="tool-btn ${currentCopies === 1 ? 'active' : ''}" id="btn-copies-1" onclick="changeCopies(1)">1 Via</button>
+          <button class="tool-btn ${currentCopies === 2 ? 'active' : ''}" id="btn-copies-2" onclick="changeCopies(2)">2 Vias</button>
+        </div>
+      </div>
+
+      <div class="toolbar-group">
+        <span class="toolbar-label">Tamanho da Letra:</span>
+        <div class="btn-group">
+          <button class="tool-btn ${currentFontSize === 'normal' ? 'active' : ''}" id="btn-size-normal" onclick="changeSize('normal')">Padrão</button>
+          <button class="tool-btn ${currentFontSize === 'large' ? 'active' : ''}" id="btn-size-large" onclick="changeSize('large')">Grande</button>
+          <button class="tool-btn ${currentFontSize === 'xlarge' ? 'active' : ''}" id="btn-size-xlarge" onclick="changeSize('xlarge')">Extra (+)</button>
+        </div>
+      </div>
+
+      <div class="toolbar-group">
+        <span class="toolbar-label">Tipo de Letra:</span>
+        <div class="btn-group">
+          <button class="tool-btn ${currentFontFamily === 'modern' ? 'active' : ''}" id="btn-font-modern" onclick="changeFont('modern')">Nítida (Moderna)</button>
+          <button class="tool-btn ${currentFontFamily === 'mono' ? 'active' : ''}" id="btn-font-mono" onclick="changeFont('mono')">Mono</button>
+        </div>
+      </div>
+
+      <div class="toolbar-group">
+        <span class="toolbar-label">Bobina / Papel:</span>
+        <div class="btn-group">
+          <button class="tool-btn ${currentPaperWidth === '80mm' ? 'active' : ''}" id="btn-width-80" onclick="changeWidth('80mm')">80mm</button>
+          <button class="tool-btn ${currentPaperWidth === '58mm' ? 'active' : ''}" id="btn-width-58" onclick="changeWidth('58mm')">58mm</button>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div class="ticket-card">
-    <div class="text-center">
-      <div class="store-title">ELIZA SORVETES</div>
-      <div class="store-sub">Sorvetes & Picolés Artesanais</div>
-      <div class="store-sub">CNPJ: 63.817.939/0001-63</div>
-      <div class="store-sub">Cupom Não Fiscal: ${sale.id}</div>
-      <div class="store-sub">${formattedDate}</div>
+  <!-- Printable Receipt Card -->
+  <div id="receipt-card" class="ticket-card width-${currentPaperWidth} size-${currentFontSize}">
+    <div id="receipt-copy-1">
+      ${renderTicketBody('1ª VIA - CONSUMIDOR')}
     </div>
 
-    <div class="dashed-line"></div>
-
-    <div>
-      <div class="row">
-        <span class="bold">CLIENTE:</span>
-        <span>${customer}</span>
-      </div>
-      <div class="row">
-        <span>Operador(a):</span>
-        <span>${sale.cashierName || 'Eliza'}</span>
+    <div id="receipt-cut-line" style="${currentCopies === 2 ? 'display: block;' : 'display: none;'}">
+      <div class="cut-divider">
+        - - - - - - ✂️ DESTACAR AQUI (2ª VIA) - - - - - -
       </div>
     </div>
 
-    <div class="dashed-line"></div>
-
-    <div class="bold" style="margin-bottom: 4px;">ITENS DA VENDA:</div>
-    <div>
-      ${sale.items.map((item) => `
-        <div class="row">
-          <span><b>${item.quantity}x</b> ${item.productName}</span>
-          <span>R$ ${(item.price * item.quantity).toFixed(2).replace('.', ',')}</span>
-        </div>
-        ${item.selectedFlavors.length > 0 ? `
-          <div class="item-flavors">Sabor: ${item.selectedFlavors.join(' + ')}</div>
-        ` : ''}
-      `).join('')}
-    </div>
-
-    <div class="dashed-line"></div>
-
-    <div>
-      <div class="row">
-        <span>Subtotal:</span>
-        <span>R$ ${sale.subtotal.toFixed(2).replace('.', ',')}</span>
-      </div>
-      <div class="row total-row">
-        <span>TOTAL:</span>
-        <span>R$ ${sale.total.toFixed(2).replace('.', ',')}</span>
-      </div>
-      <div class="row">
-        <span>Forma Pagamento:</span>
-        <span class="bold">${getPaymentName(sale.paymentMethod)}</span>
-      </div>
-      ${sale.paymentMethod === 'dinheiro' && sale.amountReceived !== undefined ? `
-        <div class="row">
-          <span>Valor Recebido:</span>
-          <span>R$ ${sale.amountReceived.toFixed(2).replace('.', ',')}</span>
-        </div>
-        <div class="row bold">
-          <span>Troco Devolvido:</span>
-          <span>R$ ${(sale.change || 0).toFixed(2).replace('.', ',')}</span>
-        </div>
-      ` : ''}
-    </div>
-
-    <div class="dashed-line"></div>
-
-    <div class="footer">
-      <div>Obrigado pela preferência!</div>
-      <div class="bold">Volte Sempre!</div>
+    <div id="receipt-copy-2" style="${currentCopies === 2 ? 'display: block;' : 'display: none;'}">
+      ${renderTicketBody('2ª VIA - ESTABELECIMENTO')}
     </div>
   </div>
 
   <script>
-    // Dispara a caixa de impressão assim que carregar
+    function changeCopies(c) {
+      const copy2 = document.getElementById('receipt-copy-2');
+      const cutLine = document.getElementById('receipt-cut-line');
+      const mainLabel = document.getElementById('main-print-label');
+
+      if (c === 2) {
+        if (copy2) copy2.style.display = 'block';
+        if (cutLine) cutLine.style.display = 'block';
+        if (mainLabel) mainLabel.textContent = 'Imprimir (2 Vias)';
+      } else {
+        if (copy2) copy2.style.display = 'none';
+        if (cutLine) cutLine.style.display = 'none';
+        if (mainLabel) mainLabel.textContent = 'Imprimir (1 Via)';
+      }
+
+      document.querySelectorAll('#btn-copies-1, #btn-copies-2').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById('btn-copies-' + c);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      try {
+        localStorage.setItem('eliza_receipt_print_copies', JSON.stringify(c));
+      } catch(e) {}
+    }
+
+    function changeSize(size) {
+      const card = document.getElementById('receipt-card');
+      card.classList.remove('size-normal', 'size-large', 'size-xlarge');
+      card.classList.add('size-' + size);
+
+      document.querySelectorAll('#btn-size-normal, #btn-size-large, #btn-size-xlarge').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById('btn-size-' + size);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      try {
+        localStorage.setItem('eliza_receipt_font_size', JSON.stringify(size));
+      } catch(e) {}
+    }
+
+    function changeFont(font) {
+      if (font === 'modern') {
+        document.body.classList.remove('font-mono');
+        document.body.classList.add('font-modern');
+      } else {
+        document.body.classList.remove('font-modern');
+        document.body.classList.add('font-mono');
+      }
+
+      document.querySelectorAll('#btn-font-modern, #btn-font-mono').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById('btn-font-' + font);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      try {
+        localStorage.setItem('eliza_receipt_font_family', JSON.stringify(font));
+      } catch(e) {}
+    }
+
+    function changeWidth(w) {
+      const card = document.getElementById('receipt-card');
+      card.classList.remove('width-80mm', 'width-58mm');
+      card.classList.add('width-' + w);
+
+      document.querySelectorAll('#btn-width-80, #btn-width-58').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById(w === '80mm' ? 'btn-width-80' : 'btn-width-58');
+      if (activeBtn) activeBtn.classList.add('active');
+
+      try {
+        localStorage.setItem('eliza_receipt_paper_width', JSON.stringify(w));
+      } catch(e) {}
+    }
+
+    // Auto print on load
     window.addEventListener('load', function() {
       setTimeout(function() {
         try {
@@ -277,7 +657,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
         } catch(e) {
           console.warn('Auto-print blocked', e);
         }
-      }, 300);
+      }, 400);
     });
   </script>
 </body>
@@ -287,14 +667,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSal
   // Generate Blob URL for instant, unblockable navigation & printing
   const receiptBlobUrl = useMemo(() => {
     try {
-      const html = generateReceiptHtml();
+      const html = generateReceiptHtml(fontSize, fontFamily, paperWidth, printCopies);
       const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
       return URL.createObjectURL(blob);
     } catch (e) {
       console.error('Error generating receipt blob url', e);
       return '';
     }
-  }, [sale]);
+  }, [sale, fontSize, fontFamily, paperWidth, printCopies]);
 
   useEffect(() => {
     return () => {
@@ -461,40 +841,220 @@ ${doubleLine}`;
           </div>
         )}
 
+        {/* Print Typography & Legibility Toolbar */}
+        <div className="px-4 py-2.5 bg-stone-100/90 border-b border-stone-200 text-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-stone-700 flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-stone-500" />
+              Opções de Impressão & Legibilidade
+            </span>
+            <span className="text-[11px] text-stone-500">
+              {printCopies === 1 ? '1 Via' : '2 Vias'} • {fontSize === 'xlarge' ? 'Extra Grande' : fontSize === 'large' ? 'Grande' : 'Padrão'} • {fontFamily === 'modern' ? 'Nítida' : 'Mono'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {/* Vias (1 via / 2 vias) */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-stone-500 uppercase flex items-center gap-1">
+                <Copy className="w-3 h-3" /> Vias
+              </label>
+              <div className="flex bg-white rounded-lg p-0.5 border border-stone-200 shadow-2xs">
+                <button
+                  type="button"
+                  id="modal-copies-1-btn"
+                  onClick={() => handleSetPrintCopies(1)}
+                  className={`flex-1 py-1 text-[11px] rounded font-semibold transition-all ${
+                    printCopies === 1 
+                      ? 'bg-stone-900 text-white shadow-2xs' 
+                      : 'text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  1 Via
+                </button>
+                <button
+                  type="button"
+                  id="modal-copies-2-btn"
+                  onClick={() => handleSetPrintCopies(2)}
+                  className={`flex-1 py-1 text-[11px] rounded font-semibold transition-all ${
+                    printCopies === 2 
+                      ? 'bg-stone-900 text-white shadow-2xs' 
+                      : 'text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  2 Vias
+                </button>
+              </div>
+            </div>
+
+            {/* Tamanho da Letra */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-stone-500 uppercase flex items-center gap-1">
+                <Type className="w-3 h-3" /> Letra
+              </label>
+              <div className="flex bg-white rounded-lg p-0.5 border border-stone-200 shadow-2xs">
+                <button
+                  type="button"
+                  id="modal-size-normal-btn"
+                  onClick={() => handleSetFontSize('normal')}
+                  className={`flex-1 py-1 text-[11px] rounded font-semibold transition-all ${
+                    fontSize === 'normal' 
+                      ? 'bg-stone-900 text-white shadow-2xs' 
+                      : 'text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  Padrão
+                </button>
+                <button
+                  type="button"
+                  id="modal-size-large-btn"
+                  onClick={() => handleSetFontSize('large')}
+                  className={`flex-1 py-1 text-[11px] rounded font-semibold transition-all ${
+                    fontSize === 'large' 
+                      ? 'bg-stone-900 text-white shadow-2xs' 
+                      : 'text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  Grande
+                </button>
+                <button
+                  type="button"
+                  id="modal-size-xlarge-btn"
+                  onClick={() => handleSetFontSize('xlarge')}
+                  className={`flex-1 py-1 text-[11px] rounded font-semibold transition-all ${
+                    fontSize === 'xlarge' 
+                      ? 'bg-stone-900 text-white shadow-2xs' 
+                      : 'text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  Extra
+                </button>
+              </div>
+            </div>
+
+            {/* Tipo de Letra */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-stone-500 uppercase">
+                Fonte
+              </label>
+              <div className="flex bg-white rounded-lg p-0.5 border border-stone-200 shadow-2xs">
+                <button
+                  type="button"
+                  id="modal-font-modern-btn"
+                  onClick={() => handleSetFontFamily('modern')}
+                  className={`flex-1 py-1 text-[11px] rounded font-semibold transition-all ${
+                    fontFamily === 'modern' 
+                      ? 'bg-stone-900 text-white shadow-2xs' 
+                      : 'text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  Nítida
+                </button>
+                <button
+                  type="button"
+                  id="modal-font-mono-btn"
+                  onClick={() => handleSetFontFamily('mono')}
+                  className={`flex-1 py-1 text-[11px] rounded font-semibold transition-all font-mono ${
+                    fontFamily === 'mono' 
+                      ? 'bg-stone-900 text-white shadow-2xs' 
+                      : 'text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  Mono
+                </button>
+              </div>
+            </div>
+
+            {/* Bobina */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-stone-500 uppercase">
+                Bobina
+              </label>
+              <div className="flex bg-white rounded-lg p-0.5 border border-stone-200 shadow-2xs">
+                <button
+                  type="button"
+                  id="modal-paper-80-btn"
+                  onClick={() => handleSetPaperWidth('80mm')}
+                  className={`flex-1 py-1 text-[11px] rounded font-semibold transition-all ${
+                    paperWidth === '80mm' 
+                      ? 'bg-stone-900 text-white shadow-2xs' 
+                      : 'text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  80mm
+                </button>
+                <button
+                  type="button"
+                  id="modal-paper-58-btn"
+                  onClick={() => handleSetPaperWidth('58mm')}
+                  className={`flex-1 py-1 text-[11px] rounded font-semibold transition-all ${
+                    paperWidth === '58mm' 
+                      ? 'bg-stone-900 text-white shadow-2xs' 
+                      : 'text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  58mm
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Printable Receipt Paper Container */}
-        <div className="p-4 sm:p-5 bg-stone-50 overflow-y-auto max-h-[50vh]">
+        <div className="p-4 sm:p-5 bg-stone-100 flex flex-col items-center overflow-y-auto max-h-[50vh]">
           <div 
             id="printable-receipt"
-            className="bg-white p-4 rounded-2xl border border-stone-200 shadow-2xs font-mono text-xs text-stone-700 space-y-3"
+            className={`bg-white p-4 rounded-xl border border-stone-300 shadow-sm text-black space-y-3 transition-all ${
+              paperWidth === '58mm' ? 'w-full max-w-[260px] print-paper-58mm' : 'w-full max-w-[340px]'
+            } ${
+              fontFamily === 'modern' ? 'font-sans' : 'font-mono print-font-mono'
+            } ${
+              fontSize === 'xlarge' 
+                ? 'text-base leading-relaxed print-size-xlarge' 
+                : fontSize === 'large' 
+                  ? 'text-sm leading-normal print-size-large' 
+                  : 'text-xs leading-normal'
+            }`}
           >
             {/* Store Header */}
-            <div className="text-center pb-3 border-b border-dashed border-stone-300">
-              <p className="font-bold text-sm tracking-wider uppercase font-sans">Eliza Sorvetes</p>
-              <p className="text-[10px] text-stone-500 font-sans">Sorvetes & Picolés Artesanais</p>
-              <p className="text-[10px] text-stone-400 mt-1 font-mono">CNPJ: 63.817.939/0001-63</p>
-              <p className="text-[10px] text-stone-500 mt-0.5">Cupom Não Fiscal: {sale.id}</p>
-              <p className="text-[10px] text-stone-400">{formattedDate}</p>
-              <div className="mt-2 pt-1.5 border-t border-dashed border-stone-200 text-left">
-                <p className="text-[11px] font-sans text-stone-700">
-                  <span className="font-semibold text-stone-500">Cliente:</span>{' '}
-                  <span className="font-bold text-stone-800">{sale.customerName || 'Consumidor Final'}</span>
+            <div className="text-center pb-3 border-b-2 border-dashed border-black">
+              <p className={`font-black tracking-wider uppercase ${fontSize === 'xlarge' ? 'text-lg' : fontSize === 'large' ? 'text-base' : 'text-sm'}`}>
+                Eliza Sorvetes
+              </p>
+              <p className="text-xs font-semibold text-black">Sorvetes & Picolés Artesanais</p>
+              <p className="text-[11px] font-medium text-black mt-0.5">CNPJ: 63.817.939/0001-63</p>
+              <p className="text-[11px] font-bold text-black mt-0.5">Cupom Não Fiscal: {sale.id}</p>
+              <p className="text-[11px] font-medium text-black">{formattedDate}</p>
+              <div className="mt-2 pt-1.5 border-t border-dashed border-black text-left">
+                <p className="text-xs text-black">
+                  <span className="font-bold">Cliente:</span>{' '}
+                  <span className="font-extrabold">{sale.customerName || 'Consumidor Final'}</span>
+                </p>
+                <p className="text-[11px] text-black">
+                  <span>Operador(a):</span>{' '}
+                  <span className="font-bold">{sale.cashierName || 'Eliza'}</span>
                 </p>
               </div>
             </div>
 
             {/* Item list */}
-            <div className="space-y-2 py-1 border-b border-dashed border-stone-300">
+            <div className="space-y-2 py-1 border-b-2 border-dashed border-black">
+              <div className="font-extrabold text-[11px] tracking-wider uppercase text-black">
+                Itens da Venda:
+              </div>
               {sale.items.map((item, idx) => (
                 <div key={idx} className="space-y-0.5">
-                  <div className="flex justify-between font-semibold">
-                    <span>
-                      {item.quantity}x {item.productName}
+                  <div className="flex justify-between font-bold text-black">
+                    <span className="pr-2">
+                      <b>{item.quantity}x</b> {item.productName}
                     </span>
-                    <span>R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}</span>
+                    <span className="whitespace-nowrap font-black">
+                      R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}
+                    </span>
                   </div>
                   {item.selectedFlavors.length > 0 && (
-                    <p className="text-[10px] text-stone-500 italic pl-2">
-                      Sabor: {item.selectedFlavors.join(' + ')}
+                    <p className="text-xs text-black font-medium pl-2">
+                      • Sabor: {item.selectedFlavors.join(' + ')}
                     </p>
                   )}
                 </div>
@@ -502,37 +1062,40 @@ ${doubleLine}`;
             </div>
 
             {/* Financial Details */}
-            <div className="space-y-1 pt-1 text-xs">
-              <div className="flex justify-between">
+            <div className="space-y-1.5 pt-1 text-black">
+              <div className="flex justify-between text-xs font-semibold">
                 <span>Subtotal:</span>
                 <span>R$ {sale.subtotal.toFixed(2).replace('.', ',')}</span>
               </div>
-              <div className="flex justify-between font-bold text-sm pt-1 border-t border-stone-200">
+              <div className={`flex justify-between font-black border-y-2 border-black py-1.5 my-1 ${
+                fontSize === 'xlarge' ? 'text-lg' : fontSize === 'large' ? 'text-base' : 'text-sm'
+              }`}>
                 <span>TOTAL:</span>
                 <span>R$ {sale.total.toFixed(2).replace('.', ',')}</span>
               </div>
-              <div className="flex justify-between pt-1 text-stone-600">
+              <div className="flex justify-between text-xs font-semibold">
                 <span>Pagamento:</span>
-                <span className="font-semibold">{getPaymentName(sale.paymentMethod)}</span>
+                <span className="font-extrabold">{getPaymentName(sale.paymentMethod)}</span>
               </div>
 
               {sale.paymentMethod === 'dinheiro' && sale.amountReceived !== undefined && (
                 <>
-                  <div className="flex justify-between text-stone-600">
+                  <div className="flex justify-between text-xs font-semibold">
                     <span>Valor Recebido:</span>
                     <span>R$ {sale.amountReceived.toFixed(2).replace('.', ',')}</span>
                   </div>
-                  <div className="flex justify-between font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                  <div className="flex justify-between font-extrabold text-xs bg-stone-100 border border-black/30 px-2 py-1 rounded">
                     <span>Troco:</span>
-                    <span>R$ ${(sale.change || 0).toFixed(2).replace('.', ',')}</span>
+                    <span className="font-black">R$ ${(sale.change || 0).toFixed(2).replace('.', ',')}</span>
                   </div>
                 </>
               )}
             </div>
 
             {/* Footer note */}
-            <div className="text-center pt-2 text-[10px] text-stone-400 font-sans">
-              Obrigado pela preferência! Volte sempre!
+            <div className="text-center pt-2 text-xs font-bold text-black border-t border-dashed border-black">
+              <div>Obrigado pela preferência!</div>
+              <div className="font-extrabold mt-0.5">Volte Sempre!</div>
             </div>
           </div>
 
@@ -636,7 +1199,7 @@ ${doubleLine}`;
               className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer active:scale-[0.99] text-center"
             >
               <Printer className="w-4 h-4" />
-              <span>Imprimir Cupom (Térmica)</span>
+              <span>Imprimir Cupom ({printCopies === 1 ? '1 Via' : '2 Vias'})</span>
             </a>
           ) : (
             <button
@@ -646,7 +1209,7 @@ ${doubleLine}`;
               className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer active:scale-[0.99]"
             >
               <Printer className="w-4 h-4" />
-              <span>Imprimir Cupom</span>
+              <span>Imprimir Cupom ({printCopies === 1 ? '1 Via' : '2 Vias'})</span>
             </button>
           )}
 
