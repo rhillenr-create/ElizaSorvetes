@@ -31,9 +31,47 @@ export const FlavorModal: React.FC<FlavorModalProps> = ({ product, onClose, onCo
       expectedCategory = 'Sobremesa';
     }
 
-    // Include custom flavors from stock
-    const customFlavors = (stock || [])
-      .filter((s) => (s?.category || '').toLowerCase() === expectedCategory.toLowerCase())
+    // Items currently in stock for this category
+    const categoryStock = (stock || []).filter(
+      (s) => (s?.category || '').toLowerCase() === expectedCategory.toLowerCase()
+    );
+
+    // If sundae, baseList are the syrups/caldas, keep baseList plus any custom toppings
+    if (product.flavorType === 'sundae') {
+      const customFlavors = categoryStock
+        .filter((s) => s.id !== 'st_sundae_base')
+        .map((s) => {
+          const cleanName = (s?.name || '').replace(/^(sorvete|picolé|picole|sundae|sobremesa):\s*/i, '').trim();
+          return {
+            id: s.id || `custom_${cleanName}`,
+            name: cleanName || 'Sabor Especial',
+            type: 'sundae' as const
+          };
+        })
+        .filter((custom) => !baseList.some((b) => (b?.name || '').toLowerCase() === (custom?.name || '').toLowerCase()));
+      return [...baseList, ...customFlavors];
+    }
+
+    // For sorvete and picolé:
+    // Filter base flavors so that if a base flavor was removed from stock, it is excluded
+    const activeBaseList = categoryStock.length > 0
+      ? baseList.filter((baseFlavor) => {
+          const baseName = (baseFlavor?.name || '').toLowerCase();
+          return categoryStock.some((s) => {
+            const sName = (s?.name || '').toLowerCase();
+            const sClean = sName.replace(/^(sorvete|picolé|picole):\s*/i, '').trim();
+            return sClean === baseName || sName.includes(baseName);
+          });
+        })
+      : baseList;
+
+    // Include custom flavors created in stock
+    const customFlavors = categoryStock
+      .filter((s) => {
+        const sName = (s?.name || '').toLowerCase();
+        const sClean = sName.replace(/^(sorvete|picolé|picole):\s*/i, '').trim();
+        return !baseList.some((b) => (b?.name || '').toLowerCase() === sClean);
+      })
       .map((s) => {
         const cleanName = (s?.name || '').replace(/^(sorvete|picolé|picole|sundae|sobremesa):\s*/i, '').trim();
         return {
@@ -41,10 +79,9 @@ export const FlavorModal: React.FC<FlavorModalProps> = ({ product, onClose, onCo
           name: cleanName || 'Sabor Especial',
           type: product.flavorType || 'sorvete'
         } as Flavor;
-      })
-      .filter((custom) => !baseList.some((b) => (b?.name || '').toLowerCase() === (custom?.name || '').toLowerCase()));
+      });
 
-    return [...baseList, ...customFlavors];
+    return [...activeBaseList, ...customFlavors];
   }, [product.flavorType, stock]);
 
   // Filter flavors by search

@@ -8,6 +8,7 @@ import {
   Plus, 
   Minus, 
   Edit3, 
+  Trash2,
   X, 
   Package, 
   Filter,
@@ -16,11 +17,12 @@ import {
 } from 'lucide-react';
 
 export const StockView: React.FC = () => {
-  const { stock, updateStockQuantity, adjustStockQuantity, updateStockThreshold, addStockItem } = usePos();
+  const { stock, updateStockQuantity, adjustStockQuantity, updateStockThreshold, addStockItem, deleteStockItem } = usePos();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
   const [filterLowStockOnly, setFilterLowStockOnly] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<StockItem | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<StockItem | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
   // Add item modal state
@@ -78,6 +80,17 @@ export const StockView: React.FC = () => {
     }, 4000);
   };
 
+  const handleConfirmDelete = () => {
+    if (!itemToDelete) return;
+    const itemName = itemToDelete.name;
+    deleteStockItem(itemToDelete.id);
+    setItemToDelete(null);
+    setFeedbackMsg(`Item / Sabor "${itemName}" excluído do estoque com sucesso!`);
+    setTimeout(() => {
+      setFeedbackMsg(null);
+    }, 4500);
+  };
+
   const handleCreateStockItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemName.trim()) return;
@@ -114,7 +127,7 @@ export const StockView: React.FC = () => {
             Controle de Estoque
           </h2>
           <p className="text-xs sm:text-sm text-stone-500">
-            Gerencie as quantidades disponíveis de sabores de sorvetes, picolés e bebidas
+            Gerencie as quantidades disponíveis, adicione novos sabores ou exclua itens do estoque
           </p>
         </div>
 
@@ -237,7 +250,7 @@ export const StockView: React.FC = () => {
                 <th className="py-3 px-3">Qtd. Atual</th>
                 <th className="py-3 px-3">Status</th>
                 <th className="py-3 px-3 text-center">Reposição Rápida</th>
-                <th className="py-3 px-3 text-right">Ação</th>
+                <th className="py-3 px-3 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 text-xs sm:text-sm text-stone-700">
@@ -361,16 +374,28 @@ export const StockView: React.FC = () => {
                         </div>
                       </td>
 
-                      {/* Edit Button */}
+                      {/* Edit & Delete Action Buttons */}
                       <td className="py-3 px-3 text-right">
-                        <button
-                          id={`edit-stock-${item.id}`}
-                          onClick={() => handleOpenEdit(item)}
-                          className="px-3 py-1.5 rounded-xl border border-stone-200 hover:border-rose-300 bg-white hover:bg-rose-50 text-stone-700 hover:text-rose-600 text-xs font-medium inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>Editar</span>
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            id={`edit-stock-${item.id}`}
+                            onClick={() => handleOpenEdit(item)}
+                            className="px-2.5 py-1.5 rounded-xl border border-stone-200 hover:border-rose-300 bg-white hover:bg-rose-50 text-stone-700 hover:text-rose-600 text-xs font-medium inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                            title="Editar quantidades e limites"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Editar</span>
+                          </button>
+                          <button
+                            id={`delete-stock-${item.id}`}
+                            onClick={() => setItemToDelete(item)}
+                            className="px-2.5 py-1.5 rounded-xl border border-rose-100 hover:border-red-300 bg-white hover:bg-red-50 text-stone-400 hover:text-red-600 text-xs font-medium inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                            title="Excluir sabor ou item do estoque"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                            <span className="hidden sm:inline text-red-600">Excluir</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -439,19 +464,102 @@ export const StockView: React.FC = () => {
               </div>
             </div>
 
-            <div className="pt-3 flex items-center justify-end gap-2.5">
+            <div className="pt-3 flex items-center justify-between gap-2.5">
               <button
-                onClick={() => setEditingItem(null)}
+                type="button"
+                id="delete-current-stock-item-btn"
+                onClick={() => {
+                  const target = editingItem;
+                  setEditingItem(null);
+                  setItemToDelete(target);
+                }}
+                className="px-3 py-2 rounded-xl text-red-600 hover:bg-red-50 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Excluir este sabor ou item do estoque"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Excluir</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  className="px-4 py-2 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-100 text-xs font-medium transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Salvar Alterações</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {itemToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-stone-900/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div 
+            className="bg-white w-full max-w-md rounded-3xl p-5 sm:p-6 shadow-2xl border border-red-100 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-stone-800 text-base font-['Quicksand',sans-serif]">
+                  Excluir Sabor / Item do Estoque?
+                </h3>
+                <p className="text-xs text-stone-500">
+                  Esta ação removerá o sabor permanentemente
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200/80 text-xs space-y-2 text-stone-600">
+              <div className="flex items-center justify-between">
+                <span className="text-stone-400 font-medium">Nome:</span>
+                <span className="font-bold text-stone-800">{itemToDelete.name}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-stone-400 font-medium">Categoria:</span>
+                <span className="inline-block px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-semibold text-[10px]">
+                  {itemToDelete.category}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-stone-400 font-medium">Estoque atual:</span>
+                <span className="font-mono font-bold text-stone-800">{itemToDelete.quantity} {itemToDelete.unit}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-stone-500 leading-relaxed">
+              O sabor <strong className="text-stone-700">{itemToDelete.name}</strong> será excluído do estoque e não aparecerá mais para escolha dos clientes no PDV.
+            </p>
+
+            <div className="pt-2 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setItemToDelete(null)}
                 className="px-4 py-2 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-100 text-xs font-medium transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
               <button
-                onClick={handleSaveEdit}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                type="button"
+                id="confirm-delete-stock-btn"
+                onClick={handleConfirmDelete}
+                className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
               >
-                <Save className="w-4 h-4" />
-                <span>Salvar Alterações</span>
+                <Trash2 className="w-4 h-4" />
+                <span>Sim, Excluir</span>
               </button>
             </div>
           </div>

@@ -495,6 +495,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               } as StockItem;
             });
             setStock(list);
+            safeStorage.set('eliza_stock', list);
           }
           setSyncStatus('synced');
         },
