@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { usePos } from '../../context/PosContext';
 import { Sale, CashShift, SalesReport } from '../../types';
 import { ReceiptModal } from '../PDV/ReceiptModal';
+import { ChangePaymentModal } from '../PDV/ChangePaymentModal';
 import { CashShiftModal, CashModalMode } from '../CashRegister/CashShiftModal';
 import { 
   getBrazilDateString, 
@@ -111,6 +112,7 @@ export const ReportsView: React.FC = () => {
 
   // Modals & Actions state
   const [selectedSaleForView, setSelectedSaleForView] = useState<Sale | null>(null);
+  const [saleForPaymentChange, setSaleForPaymentChange] = useState<Sale | null>(null);
   const [saleToDelete, setSaleToDelete] = useState<Sale | null>(null);
   const [restoreStockOnDelete, setRestoreStockOnDelete] = useState<boolean>(true);
   const [isDeletingSale, setIsDeletingSale] = useState<boolean>(false);
@@ -950,13 +952,32 @@ export const ReportsView: React.FC = () => {
                           </div>
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap">
-                          {getMethodBadge(sale.paymentMethod)}
+                          <button
+                            type="button"
+                            onClick={() => setSaleForPaymentChange(sale)}
+                            title="Clique para alterar a forma de pagamento desta venda"
+                            className="group inline-flex items-center gap-1 cursor-pointer transition-transform hover:scale-105 active:scale-95"
+                          >
+                            {getMethodBadge(sale.paymentMethod)}
+                            <span className="opacity-0 group-hover:opacity-100 text-[10px] text-amber-700 font-bold underline transition-opacity ml-0.5">
+                              Alterar
+                            </span>
+                          </button>
                         </td>
                         <td className="py-3 px-4 text-right font-mono font-bold text-stone-900 whitespace-nowrap text-sm">
                           R$ {sale.total.toFixed(2).replace('.', ',')}
                         </td>
                         <td className="py-3 px-4 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1.5">
+                            {/* Alterar Forma de Pagamento */}
+                            <button
+                              type="button"
+                              onClick={() => setSaleForPaymentChange(sale)}
+                              title="Alterar forma de pagamento da venda (sem mudar o valor)"
+                              className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <CreditCard className="w-4 h-4" />
+                            </button>
                             {/* Ver Cupom */}
                             <button
                               type="button"
@@ -1692,6 +1713,18 @@ export const ReportsView: React.FC = () => {
           onClose={() => setSelectedSaleForView(null)}
         />
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 1.5: CHANGE PAYMENT METHOD MODAL                                    */}
+      {/* ========================================================================= */}
+      <ChangePaymentModal
+        isOpen={!!saleForPaymentChange}
+        sale={saleForPaymentChange}
+        onClose={() => setSaleForPaymentChange(null)}
+        onSuccess={(updated) => {
+          showToast(`Forma de pagamento da venda ${updated.id} alterada com sucesso para ${updated.paymentMethod.replace('_', ' ').toUpperCase()}!`);
+        }}
+      />
 
       {/* ========================================================================= */}
       {/* MODAL 2: CASH SHIFT MODAL (OPEN / CLOSE / MOVEMENTS / RECEIPT)             */}

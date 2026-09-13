@@ -18,8 +18,10 @@ import {
   Trash2,
   AlertTriangle,
   Type,
-  SlidersHorizontal
+  SlidersHorizontal,
+  CreditCard
 } from 'lucide-react';
+import { ChangePaymentModal } from './ChangePaymentModal';
 
 type PrintFontSize = 'normal' | 'large' | 'xlarge';
 type PrintFontFamily = 'modern' | 'mono';
@@ -32,10 +34,19 @@ interface ReceiptModalProps {
   onSaleCancelled?: (saleId: string) => void;
 }
 
-export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose, onSaleCancelled }) => {
-  if (!sale) return null;
+export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale: initialSale, onClose, onSaleCancelled }) => {
+  if (!initialSale) return null;
 
   const { deleteSale } = usePos();
+  const [sale, setSale] = useState<Sale>(initialSale);
+  const [isChangePaymentOpen, setIsChangePaymentOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (initialSale) {
+      setSale(initialSale);
+    }
+  }, [initialSale]);
+
   const [copied, setCopied] = useState<boolean>(false);
   const [printStatus, setPrintStatus] = useState<string | null>(null);
   const [showPopupWarning, setShowPopupWarning] = useState<boolean>(false);
@@ -1003,9 +1014,19 @@ ${doubleLine}`;
                 <span>TOTAL:</span>
                 <span>R$ {sale.total.toFixed(2).replace('.', ',')}</span>
               </div>
-              <div className="flex justify-between text-xs font-semibold">
+              <div className="flex justify-between items-center text-xs font-semibold">
                 <span>Pagamento:</span>
-                <span className="font-extrabold">{getPaymentName(sale.paymentMethod)}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-extrabold">{getPaymentName(sale.paymentMethod)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsChangePaymentOpen(true)}
+                    className="text-[10px] text-amber-800 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer"
+                    title="Alterar forma de pagamento desta venda"
+                  >
+                    Alterar
+                  </button>
+                </div>
               </div>
 
               {sale.paymentMethod === 'dinheiro' && sale.amountReceived !== undefined && (
@@ -1068,6 +1089,18 @@ ${doubleLine}`;
             >
               <Download className="w-3.5 h-3.5" />
               <span>.txt</span>
+            </button>
+
+            {/* Alterar Forma de Pagamento */}
+            <button
+              type="button"
+              id="change-payment-from-receipt-btn"
+              onClick={() => setIsChangePaymentOpen(true)}
+              className="py-2 px-2.5 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-[11px] font-semibold text-amber-800 flex items-center gap-1 transition-colors cursor-pointer"
+              title="Alterar forma de pagamento desta venda (sem alterar o valor)"
+            >
+              <CreditCard className="w-3.5 h-3.5 text-amber-600" />
+              <span>Alterar Pagamento</span>
             </button>
 
             {/* Cancel / Delete Sale Button */}
@@ -1246,6 +1279,15 @@ ${doubleLine}`;
         </div>,
         document.getElementById('print-root')!
       )}
+      {/* Modal to Change Payment Method */}
+      <ChangePaymentModal
+        isOpen={isChangePaymentOpen}
+        sale={sale}
+        onClose={() => setIsChangePaymentOpen(false)}
+        onSuccess={(updated) => {
+          setSale(updated);
+        }}
+      />
     </div>
   );
 };

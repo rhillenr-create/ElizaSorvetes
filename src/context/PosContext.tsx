@@ -176,6 +176,10 @@ interface PosContextType {
     amountReceived?: number,
     customerName?: string
   ) => { success: boolean; sale?: Sale; error?: string };
+  updateSalePaymentMethod: (
+    saleId: string,
+    newPaymentMethod: PaymentMethod
+  ) => { success: boolean; updatedSale?: Sale; error?: string };
   deleteSale: (saleId: string, restoreStock?: boolean) => boolean;
   deleteAllSales: () => Promise<boolean>;
   syncAllCatalogToDatabase: () => Promise<{ productsCount: number; stockCount: number }>;
@@ -1083,6 +1087,89 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
+  // Alterar forma de pagamento após venda concluída (sem alterar valor, mantendo itens e total intactos)
+  const updateSalePaymentMethod = (
+    saleId: string,
+    newPaymentMethod: PaymentMethod
+  ): { success: boolean; updatedSale?: Sale; error?: string } => {
+    const existingSale = sales.find((s) => s.id === saleId);
+    if (!existingSale) {
+      return { success: false, error: 'Venda não encontrada.' };
+    }
+
+    if (existingSale.paymentMethod === newPaymentMethod) {
+      return { success: true, updatedSale: existingSale };
+    }
+
+    const updatedSale: Sale = {
+      ...existingSale,
+      paymentMethod: newPaymentMethod,
+      amountReceived: newPaymentMethod === 'dinheiro' 
+        ? (existingSale.amountReceived && existingSale.amountReceived >= existingSale.total ? existingSale.amountReceived : existingSale.total) 
+        : undefined,
+      change: newPaymentMethod === 'dinheiro' 
+        ? (existingSale.amountReceived && existingSale.amountReceived >= existingSale.total ? Number((existingSale.amountReceived - existingSale.total).toFixed(2)) : 0) 
+        : undefined,
+    };
+
+    // Atualiza lista em memória e no cache local
+    const updatedSalesList = sales.map((s) => (s.id === saleId ? updatedSale : s));
+    setSales(updatedSalesList);
+    safeStorage.set('eliza_sales', updatedSalesList);
+
+    if (lastCompletedSale?.id === saleId) {
+      setLastCompletedSale(updatedSale);
+    }
+
+    // Persiste atualização no banco de dados Firestore
+    setDoc(doc(db, 'sales', updatedSale.id), cleanForFirestore(updatedSale), { merge: true }).catch((err) => {
+      console.warn('Erro ao atualizar forma de pagamento no Firestore:', err);
+    });
+
+    // Reconcilia turno de caixa ativo se estiver aberto
+    if (activeShift) {
+      const { updatedShift, changed } = reconcileShiftWithSales(activeShift, updatedSalesList);
+      if (changed) {
+        setActiveShift(updatedShift);
+        safeStorage.set('eliza_active_shift', updatedShift);
+        setDoc(doc(db, 'cash_shifts', updatedShift.id), cleanForFirestore(updatedShift), { merge: true }).catch((err) => {
+          console.warn('Erro ao sincronizar turno de caixa no Firestore:', err);
+        });
+      }
+    }
+
+    // Reconcilia também nos turnos fechados em histórico se aplicável
+    setShiftsHistory((prevHistory) => {
+      let historyChanged = false;
+      const newHistory = prevHistory.map((sh) => {
+        if (sh.id === existingSale.shiftId) {
+          const { updatedShift, changed } = reconcileShiftWithSales(sh, updatedSalesList);
+          if (changed) {
+            historyChanged = true;
+            setDoc(doc(db, 'cash_shifts', updatedShift.id), cleanForFirestore(updatedShift), { merge: true }).catch(() => {});
+            return updatedShift;
+          }
+        }
+        return sh;
+      });
+      if (historyChanged) {
+        safeStorage.set('eliza_shifts_history', newHistory);
+      }
+      return newHistory;
+    });
+
+    // Atualiza automaticamente os relatórios diários e mensais no Firestore
+    const saleDate = getBrazilDateString(existingSale.timestamp);
+    const updatedDaily = buildDailySalesReport(saleDate, updatedSalesList, operatorUser?.name);
+    persistReportToFirestore(updatedDaily).catch(() => {});
+
+    const saleMonth = saleDate.slice(0, 7);
+    const updatedMonthly = buildMonthlySalesReport(saleMonth, updatedSalesList, operatorUser?.name);
+    persistReportToFirestore(updatedMonthly).catch(() => {});
+
+    return { success: true, updatedSale };
+  };
+
   // Delete all test / existing sales completely
   const deleteAllSales = async (): Promise<boolean> => {
     try {
@@ -1661,6 +1748,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cartSubtotal,
         cartTotalCount,
         finalizeSale,
+        updateSalePaymentMethod,
         deleteSale,
         deleteAllSales,
         syncAllCatalogToDatabase,
