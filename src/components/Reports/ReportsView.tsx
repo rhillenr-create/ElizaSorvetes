@@ -390,6 +390,37 @@ export const ReportsView: React.FC = () => {
 
         {/* Global Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Saída de Caixa / Pagar com Dinheiro */}
+          {activeShift ? (
+            <button
+              type="button"
+              id="btn-report-cash-outflow"
+              onClick={() => {
+                setCashModalMode('sangria');
+                setCashModalOpen(true);
+              }}
+              title="Pagar despesa, fornecedor ou compra com dinheiro da gaveta (Saída de Caixa / Sangria)"
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer select-none active:scale-95"
+            >
+              <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+              <span>Saída do Caixa (Pagar)</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              id="btn-report-open-cash"
+              onClick={() => {
+                setCashModalMode('open');
+                setCashModalOpen(true);
+              }}
+              title="O caixa está fechado. Clique para abrir o caixa."
+              className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Lock className="w-3.5 h-3.5 text-amber-600" />
+              <span>Abrir Caixa</span>
+            </button>
+          )}
+
           {/* Gravar Relatórios no Banco Agora */}
           <button
             type="button"
@@ -1002,11 +1033,13 @@ export const ReportsView: React.FC = () => {
                   </button>
                   <button
                     type="button"
+                    id="btn-shift-cash-outflow"
                     onClick={() => { setCashModalMode('sangria'); setCashModalOpen(true); }}
-                    className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-amber-200"
+                    className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                    title="Pagar despesa ou fornecedor com dinheiro do caixa (Saída / Sangria)"
                   >
-                    <ArrowUpRight className="w-4 h-4" />
-                    - Sangria (Retirada)
+                    <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+                    <span>Saída de Caixa (Pagar)</span>
                   </button>
                   <button
                     type="button"

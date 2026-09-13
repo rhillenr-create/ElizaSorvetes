@@ -201,7 +201,7 @@ interface PosContextType {
   shiftsHistory: CashShift[];
   openShift: (initialCash: number, operatorName: string, notes?: string) => Promise<CashShift>;
   closeShift: (countedCash: number, notes?: string, applyAdjustment?: boolean, adjustmentReason?: string) => Promise<CashShift>;
-  addCashMovement: (type: CashMovementType, amount: number, reason: string, adjustmentType?: 'sobra' | 'falta') => Promise<void>;
+  addCashMovement: (type: CashMovementType, amount: number, reason: string, adjustmentType?: 'sobra' | 'falta') => Promise<CashMovement>;
   adjustCash: (amount: number, adjustmentType: 'sobra' | 'falta', reason: string) => Promise<void>;
   adjustCashToCounted: (countedCash: number, reason: string) => Promise<void>;
   // Firebase Auth & Cloud Sync
@@ -1308,11 +1308,11 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     amount: number,
     reason: string,
     adjustmentType?: 'sobra' | 'falta'
-  ): Promise<void> => {
+  ): Promise<CashMovement> => {
     if (!activeShift) throw new Error('Não há caixa aberto no momento.');
 
     const val = Math.abs(Number(amount)) || 0;
-    if (val <= 0) return;
+    if (val <= 0) throw new Error('Informe um valor válido maior que zero.');
 
     let defaultReason = type === 'suprimento' ? 'Suprimento de troco' : 'Sangria de caixa';
     if (type === 'ajuste') {
@@ -1359,10 +1359,12 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await setDoc(doc(db, 'cash_shifts', updatedShift.id), cleanForFirestore(updatedShift), { merge: true }).catch((err) => {
       console.warn('Erro ao registrar movimentação de caixa no Firestore:', err);
     });
+
+    return movement;
   };
 
   const adjustCash = async (amount: number, adjustmentType: 'sobra' | 'falta', reason: string): Promise<void> => {
-    return addCashMovement('ajuste', amount, reason, adjustmentType);
+    await addCashMovement('ajuste', amount, reason, adjustmentType);
   };
 
   const adjustCashToCounted = async (countedCash: number, reason: string): Promise<void> => {
@@ -1378,7 +1380,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const finalReason =
       reason.trim() ||
       `Ajuste para valor conferido R$ ${countedCash.toFixed(2).replace('.', ',')} (${type === 'sobra' ? 'Sobra' : 'Falta'})`;
-    return addCashMovement('ajuste', Math.abs(diff), finalReason, type);
+    await addCashMovement('ajuste', Math.abs(diff), finalReason, type);
   };
 
   // Stock adjustment handlers

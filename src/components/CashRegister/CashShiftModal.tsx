@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePos } from '../../context/PosContext';
-import { CashShift, CashMovementType } from '../../types';
+import { CashShift, CashMovement, CashMovementType } from '../../types';
 import { formatBrazilDateTime } from '../../utils/dateUtils';
 import { 
   Lock, 
@@ -55,12 +55,13 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   const [operatorName, setOperatorName] = useState<string>(
     operatorUser?.name || currentUser?.displayName || 'Eliza'
   );
-  const [movementType, setMovementType] = useState<CashMovementType>('suprimento');
+  const [movementType, setMovementType] = useState<CashMovementType>('sangria');
   const [movementAmount, setMovementAmount] = useState<string>('');
   const [movementReason, setMovementReason] = useState<string>('');
   const [countedCash, setCountedCash] = useState<string>('');
   const [closingNotes, setClosingNotes] = useState<string>('');
   const [lastClosedShift, setLastClosedShift] = useState<CashShift | null>(null);
+  const [lastMovementReceipt, setLastMovementReceipt] = useState<CashMovement | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -68,8 +69,14 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   React.useEffect(() => {
     setMode(initialMode);
     setErrorMsg(null);
+    setLastMovementReceipt(null);
     if (initialMode === 'close' && activeShift) {
       setCountedCash(activeShift.expectedCash.toFixed(2));
+    }
+    if (initialMode === 'sangria') {
+      setMovementType('sangria');
+    } else if (initialMode === 'suprimento') {
+      setMovementType('suprimento');
     }
   }, [initialMode, activeShift]);
 
@@ -96,7 +103,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     }
   };
 
-  // Handler for Suprimento / Sangria
+  // Handler for Suprimento / Sangria (Saída de Caixa)
   const handleAddMovement = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -107,20 +114,22 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     }
 
     if (movementType === 'sangria' && activeShift && amount > activeShift.expectedCash) {
-      setErrorMsg(`A sangria (R$ ${amount.toFixed(2)}) não pode ser maior que o saldo em dinheiro em gaveta (R$ ${activeShift.expectedCash.toFixed(2)}).`);
+      setErrorMsg(`A saída de caixa (R$ ${amount.toFixed(2)}) não pode ser maior que o saldo em dinheiro disponível na gaveta (R$ ${activeShift.expectedCash.toFixed(2)}).`);
       return;
     }
 
     try {
       setIsSubmitting(true);
-      await addCashMovement(
+      const defaultReason = movementType === 'sangria' ? 'Saída de caixa / Pagamento' : 'Suprimento de troco';
+      const finalReason = movementReason.trim() || defaultReason;
+      const mov = await addCashMovement(
         movementType, 
         amount, 
-        movementReason.trim() || (movementType === 'suprimento' ? 'Suprimento de troco' : 'Sangria de caixa')
+        finalReason
       );
       setMovementAmount('');
       setMovementReason('');
-      onClose();
+      setLastMovementReceipt(mov);
     } catch (err: any) {
       setErrorMsg(err.message || 'Erro ao registrar movimentação.');
     } finally {
@@ -180,15 +189,15 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
               <h3 className="text-base sm:text-lg font-bold text-stone-800">
                 {mode === 'open' && 'Abertura de Caixa'}
                 {mode === 'close' && 'Fechamento & Conferência de Caixa'}
-                {mode === 'suprimento' && 'Suprimento de Caixa (Entrada)'}
-                {mode === 'sangria' && 'Sangria de Caixa (Retirada)'}
+                {mode === 'suprimento' && 'Entrada de Troco (Suprimento)'}
+                {mode === 'sangria' && 'Saída de Caixa (Pagar com Dinheiro)'}
                 {mode === 'receipt' && 'Comprovante do Turno de Caixa'}
               </h3>
               <p className="text-xs text-stone-500">
                 {mode === 'open' && 'Inicie o turno com o fundo de troco inicial'}
                 {mode === 'close' && 'Confira os valores em dinheiro e encerre o turno'}
-                {mode === 'suprimento' && 'Adicione dinheiro à gaveta para reforço de troco'}
-                {mode === 'sangria' && 'Retire dinheiro da gaveta com motivo registrado'}
+                {mode === 'suprimento' && 'Adicione dinheiro à gaveta para reforço de moedas e troco'}
+                {mode === 'sangria' && 'Retire dinheiro da gaveta para pagar despesas, fornecedores ou compras'}
                 {mode === 'receipt' && 'Demonstrativo detalhado das vendas e valores'}
               </p>
             </div>
@@ -202,6 +211,66 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Quick Mode Navigation Tabs when Shift is Active */}
+        {activeShift && mode !== 'receipt' && mode !== 'open' && (
+          <div className="flex border-b border-stone-200 bg-stone-50/80 px-4 pt-2 gap-1 overflow-x-auto text-xs font-semibold">
+            <button
+              type="button"
+              id="tab-mode-sangria"
+              onClick={() => {
+                setMode('sangria');
+                setMovementType('sangria');
+                setLastMovementReceipt(null);
+                setErrorMsg(null);
+              }}
+              className={`pb-2 px-3 rounded-t-lg transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                mode === 'sangria'
+                  ? 'bg-white text-amber-900 border-t-2 border-t-amber-600 border-x border-stone-200 shadow-2xs font-bold'
+                  : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100'
+              }`}
+            >
+              <ArrowUpRight className="w-3.5 h-3.5 text-amber-600 stroke-[2.5]" />
+              <span>Saída / Pagar</span>
+            </button>
+            <button
+              type="button"
+              id="tab-mode-suprimento"
+              onClick={() => {
+                setMode('suprimento');
+                setMovementType('suprimento');
+                setLastMovementReceipt(null);
+                setErrorMsg(null);
+              }}
+              className={`pb-2 px-3 rounded-t-lg transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                mode === 'suprimento'
+                  ? 'bg-white text-emerald-900 border-t-2 border-t-emerald-600 border-x border-stone-200 shadow-2xs font-bold'
+                  : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100'
+              }`}
+            >
+              <ArrowDownRight className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
+              <span>Entrada Troco</span>
+            </button>
+            <button
+              type="button"
+              id="tab-mode-close"
+              onClick={() => {
+                setMode('close');
+                setLastMovementReceipt(null);
+                setErrorMsg(null);
+                if (activeShift) setCountedCash(activeShift.expectedCash.toFixed(2));
+              }}
+              className={`pb-2 px-3 rounded-t-lg transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                mode === 'close'
+                  ? 'bg-white text-rose-900 border-t-2 border-t-rose-600 border-x border-stone-200 shadow-2xs font-bold'
+                  : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100'
+              }`}
+            >
+              <Lock className="w-3.5 h-3.5 text-rose-600 stroke-[2.5]" />
+              <span>Fechar Caixa</span>
+            </button>
+          </div>
+        )}
 
         {/* Error Alert */}
         {errorMsg && (
@@ -304,111 +373,396 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           </form>
         )}
 
-        {/* 2. Mode: SUPRIMENTO / SANGRIA */}
+        {/* 2. Mode: SUPRIMENTO / SANGRIA (SAÍDA DE CAIXA / PAGAR) */}
         {(mode === 'suprimento' || mode === 'sangria') && (
-          <form onSubmit={handleAddMovement} className="p-5 space-y-4">
-            <div className="flex gap-2 p-1 bg-stone-100 rounded-xl">
-              <button
-                type="button"
-                onClick={() => { setMovementType('suprimento'); setMode('suprimento'); }}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  movementType === 'suprimento'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-stone-600 hover:text-stone-900'
-                }`}
-              >
-                <ArrowDownRight className="w-3.5 h-3.5" />
-                Suprimento (Entrada)
-              </button>
-              <button
-                type="button"
-                onClick={() => { setMovementType('sangria'); setMode('sangria'); }}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  movementType === 'sangria'
-                    ? 'bg-amber-600 text-white shadow-xs'
-                    : 'text-stone-600 hover:text-stone-900'
-                }`}
-              >
-                <ArrowUpRight className="w-3.5 h-3.5" />
-                Sangria (Retirada)
-              </button>
-            </div>
+          <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+            {/* View A: Success Receipt after registering a movement */}
+            {lastMovementReceipt ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-1.5">
+                  <div className="w-12 h-12 mx-auto rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-base font-bold text-emerald-950">
+                    {lastMovementReceipt.type === 'sangria' ? 'Saída de Caixa Registrada!' : 'Entrada de Troco Registrada!'}
+                  </h4>
+                  <p className="text-xs text-emerald-800">
+                    {lastMovementReceipt.type === 'sangria'
+                      ? 'O pagamento foi registrado e o valor em dinheiro já foi deduzido da gaveta.'
+                      : 'O suprimento foi registrado e o valor foi somado ao saldo da gaveta.'}
+                  </p>
+                </div>
 
-            {activeShift && (
-              <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/80 flex items-center justify-between text-xs">
-                <span className="text-stone-600 font-medium">Saldo Atual em Dinheiro na Gaveta:</span>
-                <span className="font-bold text-stone-900 text-sm">
-                  R$ {activeShift.expectedCash.toFixed(2).replace('.', ',')}
-                </span>
+                {/* Voucher Summary Card */}
+                <div className="p-4 bg-stone-50 rounded-xl border border-stone-200/90 text-xs space-y-2">
+                  <div className="flex justify-between items-center pb-2 border-b border-stone-200">
+                    <span className="text-stone-500 font-medium">Tipo de Operação:</span>
+                    <span className={`font-bold uppercase px-2 py-0.5 rounded-md text-[10px] ${
+                      lastMovementReceipt.type === 'sangria' ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'
+                    }`}>
+                      {lastMovementReceipt.type === 'sangria' ? 'Saída de Caixa / Pagamento' : 'Entrada / Suprimento'}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-stone-700 font-bold">Valor Movimentado:</span>
+                    <span className={`text-base font-black ${
+                      lastMovementReceipt.type === 'sangria' ? 'text-amber-800' : 'text-emerald-800'
+                    }`}>
+                      {lastMovementReceipt.type === 'sangria' ? '- ' : '+ '}R$ {lastMovementReceipt.amount.toFixed(2).replace('.', ',')}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-start py-1 border-t border-stone-200">
+                    <span className="text-stone-500 font-medium">Motivo / Finalidade:</span>
+                    <span className="font-semibold text-stone-800 text-right max-w-[240px]">
+                      {lastMovementReceipt.reason}
+                    </span>
+                  </div>
+
+                  {lastMovementReceipt.newExpectedCash !== undefined && (
+                    <div className="flex justify-between items-center pt-2 border-t border-stone-200 font-bold">
+                      <span className="text-stone-700">Saldo Restante na Gaveta:</span>
+                      <span className="font-mono text-stone-900 text-sm">
+                        R$ {lastMovementReceipt.newExpectedCash.toFixed(2).replace('.', ',')}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between text-[11px] text-stone-500 pt-1">
+                    <span>Operador: {lastMovementReceipt.operatorName}</span>
+                    <span>{formatBrazilDateTime(lastMovementReceipt.timestamp)}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    id="btn-print-movement-voucher"
+                    onClick={handlePrint}
+                    className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-900 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4" />
+                    Imprimir Comprovante
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLastMovementReceipt(null);
+                      setMovementAmount('');
+                      setMovementReason('');
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs sm:text-sm font-bold border border-amber-200 transition-all cursor-pointer"
+                  >
+                    + Nova Saída / Movimentação
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs sm:text-sm font-semibold transition-all cursor-pointer"
+                  >
+                    Concluir
+                  </button>
+                </div>
               </div>
-            )}
+            ) : (
+              /* View B: Form for registering a movement */
+              <form onSubmit={handleAddMovement} className="space-y-4">
+                {/* Mode Selector Toggle */}
+                <div className="flex gap-2 p-1 bg-stone-100 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => { setMovementType('sangria'); setMode('sangria'); setErrorMsg(null); }}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      movementType === 'sangria'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    <ArrowUpRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                    Saída de Caixa (Pagar)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setMovementType('suprimento'); setMode('suprimento'); setErrorMsg(null); }}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      movementType === 'suprimento'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    <ArrowDownRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                    Entrada Troco (Suprimento)
+                  </button>
+                </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Valor da Movimentação (R$)
-              </label>
-              <div className="relative">
-                <span className="text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-sm">
-                  R$
-                </span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  value={movementAmount}
-                  onChange={(e) => setMovementAmount(e.target.value)}
-                  placeholder="0,00"
-                  className="w-full pl-11 pr-3 py-2.5 text-base rounded-xl border border-stone-200 focus:outline-hidden focus:ring-2 focus:ring-rose-300 text-stone-900 font-bold"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Motivo / Justificativa
-              </label>
-              <input
-                type="text"
-                required
-                value={movementReason}
-                onChange={(e) => setMovementReason(e.target.value)}
-                placeholder={
-                  movementType === 'suprimento'
-                    ? 'Ex: Reforço de moedas e troco'
-                    : 'Ex: Pagamento de fornecedor de leite / Sangria de segurança'
-                }
-                className="w-full px-3.5 py-2 text-sm rounded-xl border border-stone-200 focus:outline-hidden focus:ring-2 focus:ring-rose-300 text-stone-800"
-              />
-            </div>
-
-            <div className="pt-2 flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-xs sm:text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-xl cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                id="btn-confirm-movement"
-                disabled={isSubmitting}
-                className={`px-5 py-2.5 text-white text-xs sm:text-sm font-bold rounded-xl shadow-sm transition-all cursor-pointer flex items-center gap-2 ${
-                  movementType === 'suprimento'
-                    ? 'bg-emerald-600 hover:bg-emerald-700'
-                    : 'bg-amber-600 hover:bg-amber-700'
-                }`}
-              >
-                {movementType === 'suprimento' ? (
-                  <ArrowDownRight className="w-4 h-4" />
-                ) : (
-                  <ArrowUpRight className="w-4 h-4" />
+                {/* Drawer Cash Status Banner */}
+                {activeShift && (
+                  <div className={`p-3.5 rounded-xl border flex items-center justify-between text-xs ${
+                    movementType === 'sangria'
+                      ? 'bg-amber-50/70 border-amber-200 text-amber-950'
+                      : 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                  }`}>
+                    <div>
+                      <span className="font-semibold block">
+                        Saldo Atual em Dinheiro na Gaveta:
+                      </span>
+                      <span className="text-[11px] text-stone-500">
+                        {movementType === 'sangria'
+                          ? 'Valor disponível para pagamentos e retiradas'
+                          : 'Dinheiro físico existente na gaveta'}
+                      </span>
+                    </div>
+                    <span className="font-mono font-black text-base text-stone-900">
+                      R$ {activeShift.expectedCash.toFixed(2).replace('.', ',')}
+                    </span>
+                  </div>
                 )}
-                {isSubmitting ? 'Registrando...' : `Confirmar ${movementType === 'suprimento' ? 'Suprimento' : 'Sangria'}`}
-              </button>
-            </div>
-          </form>
+
+                {/* Valor da Saída / Movimentação */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-stone-700">
+                      {movementType === 'sangria' ? 'Valor a Pagar / Retirar (R$)' : 'Valor a Adicionar (R$)'}
+                    </label>
+                    {activeShift && movementType === 'sangria' && (
+                      <span className="text-[11px] text-stone-500 font-medium">
+                        Máximo: R$ {activeShift.expectedCash.toFixed(2).replace('.', ',')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <span className="text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-sm">
+                      R$
+                    </span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      value={movementAmount}
+                      onChange={(e) => setMovementAmount(e.target.value)}
+                      placeholder="0,00"
+                      className={`w-full pl-11 pr-3 py-2.5 text-base rounded-xl border focus:outline-hidden focus:ring-2 text-stone-900 font-bold ${
+                        movementType === 'sangria'
+                          ? 'border-stone-200 focus:ring-amber-300'
+                          : 'border-stone-200 focus:ring-emerald-300'
+                      }`}
+                    />
+                  </div>
+
+                  {/* Quick suggestions buttons */}
+                  <div className="flex items-center flex-wrap gap-1.5 mt-2">
+                    <span className="text-[11px] text-stone-500">Valores rápidos:</span>
+                    {[10, 20, 50, 100, 200].map((val) => (
+                      <button
+                        type="button"
+                        key={val}
+                        onClick={() => setMovementAmount(val.toFixed(2))}
+                        className="px-2 py-0.5 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        R$ {val}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Motivo / Justificativa com botões de atalho */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    {movementType === 'sangria' ? 'Motivo do Pagamento / Saída' : 'Motivo do Suprimento'}
+                  </label>
+
+                  {/* Preset chips for fast selection */}
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {movementType === 'sangria' ? (
+                      <>
+                        {[
+                          { label: '🚚 Fornecedor', text: 'Pagamento de Fornecedor' },
+                          { label: '🥛 Leite / Frutas', text: 'Compra de Leite e Frutas' },
+                          { label: '🧊 Gelo / Descartáveis', text: 'Compra de Gelo e Embalagens' },
+                          { label: '🧹 Despesa da Loja', text: 'Despesa / Material de Limpeza' },
+                          { label: '👤 Vale / Adiantamento', text: 'Adiantamento / Vale' },
+                          { label: '🛡️ Sangria de Segurança', text: 'Sangria de Segurança' },
+                        ].map((preset) => (
+                          <button
+                            type="button"
+                            key={preset.label}
+                            onClick={() => setMovementReason(preset.text)}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
+                              movementReason === preset.text
+                                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        {[
+                          { label: '🪙 Troco Moedas', text: 'Reforço de Moedas para Troco' },
+                          { label: '💵 Notas de R$ 2 / R$ 5', text: 'Reforço de Notas Baixas para Troco' },
+                          { label: '💰 Suprimento Geral', text: 'Suprimento Geral de Caixa' },
+                        ].map((preset) => (
+                          <button
+                            type="button"
+                            key={preset.label}
+                            onClick={() => setMovementReason(preset.text)}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
+                              movementReason === preset.text
+                                ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+
+                  <input
+                    type="text"
+                    required
+                    value={movementReason}
+                    onChange={(e) => setMovementReason(e.target.value)}
+                    placeholder={
+                      movementType === 'sangria'
+                        ? 'Ex: Pagamento fornecedor de leite, compra de frutas, etc.'
+                        : 'Ex: Reforço de moedas e notas de troco'
+                    }
+                    className="w-full px-3.5 py-2 text-sm rounded-xl border border-stone-200 focus:outline-hidden focus:ring-2 focus:ring-amber-300 text-stone-800"
+                  />
+                </div>
+
+                {/* Live Math Calculation Preview */}
+                {activeShift && parseFloat(movementAmount.replace(',', '.')) > 0 && (
+                  <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs space-y-1">
+                    <div className="flex justify-between text-stone-600">
+                      <span>Saldo Atual da Gaveta:</span>
+                      <span>R$ {activeShift.expectedCash.toFixed(2).replace('.', ',')}</span>
+                    </div>
+                    <div className={`flex justify-between font-bold ${
+                      movementType === 'sangria' ? 'text-amber-800' : 'text-emerald-800'
+                    }`}>
+                      <span>{movementType === 'sangria' ? '(-) Saída / Pagamento:' : '(+) Suprimento:'}</span>
+                      <span>
+                        {movementType === 'sangria' ? '- ' : '+ '}
+                        R$ {parseFloat(movementAmount.replace(',', '.')).toFixed(2).replace('.', ',')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-extrabold text-stone-900 pt-1 border-t border-stone-200">
+                      <span>Novo Saldo Estimado:</span>
+                      <span className={
+                        movementType === 'sangria' && parseFloat(movementAmount.replace(',', '.')) > activeShift.expectedCash
+                          ? 'text-rose-600'
+                          : 'text-stone-900'
+                      }>
+                        R$ {(
+                          movementType === 'sangria'
+                            ? activeShift.expectedCash - parseFloat(movementAmount.replace(',', '.'))
+                            : activeShift.expectedCash + parseFloat(movementAmount.replace(',', '.'))
+                        ).toFixed(2).replace('.', ',')}
+                      </span>
+                    </div>
+                    {movementType === 'sangria' && parseFloat(movementAmount.replace(',', '.')) > activeShift.expectedCash && (
+                      <p className="text-[11px] text-rose-600 font-bold pt-1">
+                        ⚠️ Atenção: O valor da saída ultrapassa o dinheiro físico existente na gaveta!
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="pt-2 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2 text-xs sm:text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-xl cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    id="btn-confirm-movement"
+                    disabled={isSubmitting}
+                    className={`px-5 py-2.5 text-white text-xs sm:text-sm font-bold rounded-xl shadow-sm transition-all cursor-pointer flex items-center gap-2 ${
+                      movementType === 'suprimento'
+                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                        : 'bg-amber-600 hover:bg-amber-700'
+                    }`}
+                  >
+                    {movementType === 'suprimento' ? (
+                      <ArrowDownRight className="w-4 h-4" />
+                    ) : (
+                      <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+                    )}
+                    {isSubmitting
+                      ? 'Registrando...'
+                      : movementType === 'sangria'
+                        ? 'Confirmar Saída de Caixa'
+                        : 'Confirmar Suprimento'}
+                  </button>
+                </div>
+
+                {/* Histórico das movimentações deste turno */}
+                {activeShift && activeShift.movements && activeShift.movements.length > 0 && (
+                  <div className="pt-4 border-t border-stone-200">
+                    <h4 className="text-xs font-bold text-stone-700 mb-2 flex items-center justify-between">
+                      <span>Movimentações Realizadas Neste Turno ({activeShift.movements.length})</span>
+                      <span className="text-[10px] text-stone-500 font-normal">Mais recentes primeiro</span>
+                    </h4>
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                      {[...activeShift.movements].reverse().map((mov) => (
+                        <div
+                          key={mov.id}
+                          className="p-2.5 rounded-lg bg-stone-50 hover:bg-stone-100/80 border border-stone-200/70 text-xs flex items-center justify-between gap-2 transition-colors"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
+                              mov.type === 'sangria' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                              {mov.type === 'sangria' ? (
+                                <ArrowUpRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                              ) : (
+                                <ArrowDownRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-stone-800 truncate">{mov.reason}</p>
+                              <p className="text-[10px] text-stone-500">
+                                {formatBrazilDateTime(mov.timestamp)} • {mov.operatorName}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={`font-mono font-bold ${
+                              mov.type === 'sangria' ? 'text-amber-800' : 'text-emerald-800'
+                            }`}>
+                              {mov.type === 'sangria' ? '- ' : '+ '}R$ {mov.amount.toFixed(2).replace('.', ',')}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLastMovementReceipt(mov);
+                                setTimeout(() => window.print(), 50);
+                              }}
+                              title="Reimprimir comprovante desta movimentação"
+                              className="p-1 text-stone-400 hover:text-stone-800 hover:bg-white rounded transition-colors cursor-pointer"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </form>
+            )}
+          </div>
         )}
 
         {/* 3. Mode: CLOSE SHIFT */}
@@ -789,6 +1143,74 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
             <div className="pt-2 border-t-2 border-dashed border-black text-xs text-black">
               <span className="font-bold block">Obs:</span>
               <span>{receiptShift.notes}</span>
+            </div>
+          )}
+        </div>,
+        document.getElementById('print-root')!
+      )}
+
+      {/* Portal movement voucher directly to #print-root for single-page thermal print */}
+      {lastMovementReceipt && typeof document !== 'undefined' && document.getElementById('print-root') && createPortal(
+        <div className="pos-shift-receipt-print">
+          <div className="text-center pb-3 border-b-2 border-dashed border-black">
+            <h4 className="font-black text-sm tracking-wider uppercase">Eliza Sorvetes Artesanais</h4>
+            <p className="text-xs font-black text-black uppercase mt-0.5">
+              {lastMovementReceipt.type === 'sangria' ? 'Comprovante de Saída de Caixa' : 'Comprovante de Entrada de Caixa'}
+            </p>
+            <p className="text-[11px] font-bold text-black uppercase">
+              {lastMovementReceipt.type === 'sangria' ? 'Pagamento com Dinheiro / Sangria' : 'Suprimento de Troco'}
+            </p>
+            <p className="text-[10px] text-stone-600">ID: {lastMovementReceipt.id}</p>
+          </div>
+
+          <div className="space-y-1 text-xs py-2 border-b-2 border-dashed border-black text-black">
+            <div className="flex justify-between">
+              <span className="font-semibold">Data e Hora:</span>
+              <span className="font-extrabold">{formatBrazilDateTime(lastMovementReceipt.timestamp)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-semibold">Operador do Caixa:</span>
+              <span className="font-extrabold">{lastMovementReceipt.operatorName}</span>
+            </div>
+            {activeShift && (
+              <div className="flex justify-between">
+                <span>Turno de Caixa:</span>
+                <span className="font-medium">{activeShift.id}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="py-2.5 border-b-2 border-dashed border-black space-y-1.5 text-black">
+            <div className="flex justify-between items-center text-sm font-black">
+              <span>{lastMovementReceipt.type === 'sangria' ? 'VALOR PAGO / RETIRADO:' : 'VALOR RECEBIDO:'}</span>
+              <span>R$ {lastMovementReceipt.amount.toFixed(2).replace('.', ',')}</span>
+            </div>
+            <div className="text-xs">
+              <span className="font-bold">Motivo / Finalidade:</span>
+              <p className="font-medium mt-0.5">{lastMovementReceipt.reason}</p>
+            </div>
+          </div>
+
+          <div className="space-y-1 text-xs py-2 border-b-2 border-dashed border-black text-black">
+            {lastMovementReceipt.previousExpectedCash !== undefined && (
+              <div className="flex justify-between text-[11px]">
+                <span>Saldo Anterior da Gaveta:</span>
+                <span>R$ {lastMovementReceipt.previousExpectedCash.toFixed(2).replace('.', ',')}</span>
+              </div>
+            )}
+            {lastMovementReceipt.newExpectedCash !== undefined && (
+              <div className="flex justify-between font-bold">
+                <span>Saldo Restante na Gaveta:</span>
+                <span>R$ {lastMovementReceipt.newExpectedCash.toFixed(2).replace('.', ',')}</span>
+              </div>
+            )}
+          </div>
+
+          {lastMovementReceipt.type === 'sangria' && (
+            <div className="pt-6 pb-2 text-center text-xs text-black">
+              <div className="w-52 mx-auto border-b border-black mb-1"></div>
+              <p className="font-bold text-[11px]">Assinatura de quem recebeu o valor</p>
+              <p className="text-[10px] text-stone-600 mt-0.5">Nome / Doc: _________________________</p>
             </div>
           )}
         </div>,
