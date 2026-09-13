@@ -942,6 +942,15 @@ export const ReportsView: React.FC = () => {
                               <div key={idx} className="text-[11px] truncate">
                                 <span className="font-semibold text-stone-800">{it.quantity}x</span>{' '}
                                 <span>{it.productName}</span>
+                                {it.container && (
+                                  <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold inline-block ${
+                                    it.container === 'casquinha'
+                                      ? 'bg-amber-100 text-amber-900 border border-amber-200'
+                                      : 'bg-rose-100 text-rose-900 border border-rose-200'
+                                  }`}>
+                                    {it.container === 'casquinha' ? 'Casquinha' : 'Copinho'}
+                                  </span>
+                                )}
                                 {it.selectedFlavors.length > 0 && (
                                   <span className="text-stone-400 ml-1">
                                     ({it.selectedFlavors.join(', ')})

@@ -34,6 +34,8 @@ export interface StockItem {
   updatedAt: string;
 }
 
+export type IceCreamContainer = 'casquinha' | 'copinho';
+
 export interface CartItem {
   cartId: string;
   productId: string;
@@ -41,6 +43,7 @@ export interface CartItem {
   price: number;
   quantity: number;
   selectedFlavors: string[];
+  container?: IceCreamContainer;
   notes?: string;
 }
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Product } from '../../types';
+import { Product, IceCreamContainer } from '../../types';
 import { usePos } from '../../context/PosContext';
 import { ProductModal } from '../Products/ProductModal';
 import { 
@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 interface ProductGridProps {
-  onOpenFlavorModal: (product: Product) => void;
+  onOpenFlavorModal: (product: Product, container?: IceCreamContainer) => void;
 }
 
 export const ProductGrid: React.FC<ProductGridProps> = ({ onOpenFlavorModal }) => {
@@ -131,6 +131,10 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ onOpenFlavorModal }) =
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3 flex-1 overflow-y-auto pr-0.5 sm:pr-1 pb-16 lg:pb-2">
         {filteredProducts.map((product) => {
           const isJustAdded = justAddedId === product.id;
+          const supportsContainer =
+            product.id === 'sorvete_1_bola' ||
+            product.id === 'sorvete_2_bolas' ||
+            (product.category === 'sorvete' && product.id !== 'agua_mineral');
 
           return (
             <div
@@ -204,6 +208,37 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ onOpenFlavorModal }) =
                   )}
                 </div>
               </div>
+
+              {/* Opção Fácil e Rápida: Casquinha ou Copinho na comanda */}
+              {supportsContainer && (
+                <div className="relative z-10 mt-2 pt-2 border-t border-rose-100/70 flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenFlavorModal(product, 'casquinha');
+                    }}
+                    className="flex-1 py-1.5 px-2 rounded-xl bg-amber-50/90 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[10px] sm:text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 shadow-2xs hover:shadow-xs"
+                    title="Pedir na Casquinha crocante"
+                  >
+                    <span>🍦</span>
+                    <span className="truncate">Casquinha</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenFlavorModal(product, 'copinho');
+                    }}
+                    className="flex-1 py-1.5 px-2 rounded-xl bg-rose-50/90 hover:bg-rose-100 text-rose-900 border border-rose-200 text-[10px] sm:text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 shadow-2xs hover:shadow-xs"
+                    title="Pedir no Copinho com colher"
+                  >
+                    <span>🍧</span>
+                    <span className="truncate">Copinho</span>
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

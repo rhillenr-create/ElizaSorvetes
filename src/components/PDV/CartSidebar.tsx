@@ -31,6 +31,7 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({ onSaleCompleted }) => 
     cartTotalCount,
     removeFromCart,
     updateCartQuantity,
+    updateCartItemContainer,
     clearCart,
     finalizeSale
   } = usePos();
@@ -194,9 +195,30 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({ onSaleCompleted }) => 
                 </button>
               </div>
 
-              {/* Chosen flavors display */}
-              {item.selectedFlavors.length > 0 && (
-                <div className="flex flex-wrap gap-1">
+              {/* Container and chosen flavors display */}
+              {(item.container || item.selectedFlavors.length > 0) && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {item.container && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateCartItemContainer(
+                          item.cartId,
+                          item.container === 'casquinha' ? 'copinho' : 'casquinha'
+                        )
+                      }
+                      className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg border transition-all cursor-pointer ${
+                        item.container === 'casquinha'
+                          ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                          : 'bg-rose-100 text-rose-900 border-rose-300 hover:bg-rose-200'
+                      }`}
+                      title="Clique para alternar entre Casquinha e Copinho"
+                    >
+                      <span>{item.container === 'casquinha' ? '🍦 Casquinha' : '🍧 Copinho'}</span>
+                      <span className="text-[9px] font-normal opacity-70">↺</span>
+                    </button>
+                  )}
+
                   {item.selectedFlavors.map((flavor, fIdx) => (
                     <span
                       key={fIdx}

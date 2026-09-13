@@ -11,7 +11,8 @@ import {
   CashShift,
   CashMovement,
   CashMovementType,
-  SalesReport
+  SalesReport,
+  IceCreamContainer
 } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_STOCK, INITIAL_SALES } from '../data/initialData';
 import { safeStorage } from '../utils/storage';
@@ -165,7 +166,8 @@ interface PosContextType {
   stock: StockItem[];
   cart: CartItem[];
   sales: Sale[];
-  addToCart: (product: Product, flavors: string[], quantity?: number) => void;
+  addToCart: (product: Product, flavors: string[], quantity?: number, container?: IceCreamContainer) => void;
+  updateCartItemContainer: (cartId: string, container: IceCreamContainer) => void;
   removeFromCart: (cartId: string) => void;
   updateCartQuantity: (cartId: string, delta: number) => void;
   clearCart: () => void;
@@ -671,13 +673,19 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Add to cart
-  const addToCart = (product: Product, flavors: string[], quantity = 1) => {
+  const addToCart = (
+    product: Product,
+    flavors: string[],
+    quantity = 1,
+    container?: IceCreamContainer
+  ) => {
     const sortedFlavors = [...flavors].sort();
     setCart((prev) => {
-      // Check if item with exact same product and flavors exists
+      // Check if item with exact same product, flavors and container exists
       const existingIndex = prev.findIndex(
         (item) =>
           item.productId === product.id &&
+          item.container === container &&
           item.selectedFlavors.length === sortedFlavors.length &&
           [...item.selectedFlavors].sort().every((f, i) => f === sortedFlavors[i])
       );
@@ -697,11 +705,18 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         productName: product.name,
         price: product.price,
         quantity,
-        selectedFlavors: sortedFlavors
+        selectedFlavors: sortedFlavors,
+        container
       };
 
       return [...prev, newItem];
     });
+  };
+
+  const updateCartItemContainer = (cartId: string, newContainer: IceCreamContainer) => {
+    setCart((prev) =>
+      prev.map((item) => (item.cartId === cartId ? { ...item, container: newContainer } : item))
+    );
   };
 
   const removeFromCart = (cartId: string) => {
@@ -1742,6 +1757,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cart,
         sales,
         addToCart,
+        updateCartItemContainer,
         removeFromCart,
         updateCartQuantity,
         clearCart,

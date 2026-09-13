@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Product } from '../../types';
+import { Product, IceCreamContainer } from '../../types';
 import { ProductGrid } from './ProductGrid';
 import { CartSidebar } from './CartSidebar';
 import { FlavorModal } from './FlavorModal';
@@ -10,15 +10,17 @@ import { ShoppingCart } from 'lucide-react';
 export const PdvView: React.FC = () => {
   const { addToCart, lastCompletedSale, setLastCompletedSale, cartTotalCount, cartSubtotal } = usePos();
   const [flavorModalProduct, setFlavorModalProduct] = useState<Product | null>(null);
+  const [defaultContainer, setDefaultContainer] = useState<IceCreamContainer | undefined>(undefined);
   const [mobileCartOpen, setMobileCartOpen] = useState<boolean>(false);
 
-  const handleOpenFlavorModal = (product: Product) => {
+  const handleOpenFlavorModal = (product: Product, initialContainer?: IceCreamContainer) => {
     setFlavorModalProduct(product);
+    setDefaultContainer(initialContainer);
   };
 
-  const handleConfirmFlavors = (flavors: string[]) => {
+  const handleConfirmFlavors = (flavors: string[], container?: IceCreamContainer) => {
     if (flavorModalProduct) {
-      addToCart(flavorModalProduct, flavors);
+      addToCart(flavorModalProduct, flavors, 1, container);
       setFlavorModalProduct(null);
     }
   };
@@ -147,6 +149,7 @@ export const PdvView: React.FC = () => {
       {flavorModalProduct && (
         <FlavorModal
           product={flavorModalProduct}
+          defaultContainer={defaultContainer}
           onClose={() => setFlavorModalProduct(null)}
           onConfirm={handleConfirmFlavors}
         />

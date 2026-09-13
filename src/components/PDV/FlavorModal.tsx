@@ -1,19 +1,42 @@
-import React, { useState, useMemo } from 'react';
-import { Product, Flavor } from '../../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Product, Flavor, IceCreamContainer } from '../../types';
 import { ICE_CREAM_FLAVORS, POPSICLE_FLAVORS, SUNDAE_FLAVORS } from '../../data/initialData';
 import { usePos } from '../../context/PosContext';
 import { X, Search, Check, AlertCircle, Sparkles } from 'lucide-react';
 
 interface FlavorModalProps {
   product: Product | null;
+  defaultContainer?: IceCreamContainer;
   onClose: () => void;
-  onConfirm: (flavors: string[]) => void;
+  onConfirm: (flavors: string[], container?: IceCreamContainer) => void;
 }
 
-export const FlavorModal: React.FC<FlavorModalProps> = ({ product, onClose, onConfirm }) => {
+export const FlavorModal: React.FC<FlavorModalProps> = ({ 
+  product, 
+  defaultContainer,
+  onClose, 
+  onConfirm 
+}) => {
   const { stock } = usePos();
   const [selectedFlavors, setSelectedFlavors] = useState<string[]>([]);
+  const [selectedContainer, setSelectedContainer] = useState<IceCreamContainer>(defaultContainer || 'casquinha');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const supportsContainer = Boolean(
+    product && (
+      product.id === 'sorvete_1_bola' ||
+      product.id === 'sorvete_2_bolas' ||
+      (product.category === 'sorvete' && product.id !== 'agua_mineral')
+    )
+  );
+
+  useEffect(() => {
+    if (defaultContainer) {
+      setSelectedContainer(defaultContainer);
+    } else {
+      setSelectedContainer('casquinha');
+    }
+  }, [defaultContainer, product?.id]);
 
   if (!product) return null;
 
@@ -137,7 +160,7 @@ export const FlavorModal: React.FC<FlavorModalProps> = ({ product, onClose, onCo
 
   const handleConfirm = () => {
     if (selectedFlavors.length === 0) return;
-    onConfirm(selectedFlavors);
+    onConfirm(selectedFlavors, supportsContainer ? selectedContainer : undefined);
     onClose();
   };
 
@@ -153,13 +176,13 @@ export const FlavorModal: React.FC<FlavorModalProps> = ({ product, onClose, onCo
             <div className="flex items-center gap-1.5 sm:gap-2">
               <span className="text-lg sm:text-xl">🍦</span>
               <h2 className="text-base sm:text-lg font-bold text-stone-800 font-['Quicksand',sans-serif] leading-tight">
-                Escolha o Sabor: {product.name}
+                {product.name}
               </h2>
             </div>
             <p className="text-[11px] sm:text-xs text-stone-600 mt-0.5">
               {maxFlavors === 1
-                ? 'Selecione 1 sabor para o produto'
-                : `Selecione até ${maxFlavors} sabores (pode repetir para dose dupla)`}
+                ? 'Escolha a embalagem e selecione 1 sabor'
+                : `Escolha a embalagem e selecione até ${maxFlavors} sabores`}
             </p>
           </div>
 
@@ -172,10 +195,70 @@ export const FlavorModal: React.FC<FlavorModalProps> = ({ product, onClose, onCo
           </button>
         </div>
 
+        {/* Escolha rápida e fácil: Casquinha ou Copinho */}
+        {supportsContainer && (
+          <div className="px-4 sm:px-5 py-2.5 bg-gradient-to-r from-amber-50/70 via-orange-50/40 to-rose-50/70 border-b border-rose-100/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-stone-800 uppercase tracking-wider flex items-center gap-1.5">
+                <span>🍦</span> Onde vai servir?
+              </span>
+              <span className="text-[11px] text-stone-500 font-medium">
+                (Toque para escolher)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                id="select-container-casquinha-btn"
+                onClick={() => setSelectedContainer('casquinha')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 border transition-all cursor-pointer ${
+                  selectedContainer === 'casquinha'
+                    ? 'bg-amber-500 text-white border-amber-600 shadow-sm shadow-amber-300/50 ring-2 ring-amber-300 scale-[1.02]'
+                    : 'bg-white hover:bg-amber-50/60 text-stone-700 border-stone-200 shadow-2xs'
+                }`}
+              >
+                <span className="text-base">🍦</span>
+                <span>Casquinha</span>
+                {selectedContainer === 'casquinha' && (
+                  <Check className="w-3.5 h-3.5 stroke-[3] text-white" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                id="select-container-copinho-btn"
+                onClick={() => setSelectedContainer('copinho')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 border transition-all cursor-pointer ${
+                  selectedContainer === 'copinho'
+                    ? 'bg-rose-500 text-white border-rose-600 shadow-sm shadow-rose-300/50 ring-2 ring-rose-300 scale-[1.02]'
+                    : 'bg-white hover:bg-rose-50/60 text-stone-700 border-stone-200 shadow-2xs'
+                }`}
+              >
+                <span className="text-base">🍧</span>
+                <span>Copinho</span>
+                {selectedContainer === 'copinho' && (
+                  <Check className="w-3.5 h-3.5 stroke-[3] text-white" />
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Selected preview bar */}
         <div className="px-4 sm:px-5 py-2 sm:py-2.5 bg-amber-50/50 border-b border-rose-100/60 flex flex-wrap items-center justify-between gap-1.5 text-xs shrink-0">
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <span className="font-semibold text-stone-700 text-[11px] sm:text-xs">Selecionado(s):</span>
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            {supportsContainer && (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+                selectedContainer === 'casquinha'
+                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : 'bg-rose-100 text-rose-900 border-rose-300'
+              }`}>
+                <span>{selectedContainer === 'casquinha' ? '🍦' : '🍧'}</span>
+                <span>{selectedContainer === 'casquinha' ? 'Casquinha' : 'Copinho'}</span>
+              </span>
+            )}
+            <span className="font-semibold text-stone-700 text-[11px] sm:text-xs">Sabor(es):</span>
             {selectedFlavors.length === 0 ? (
               <span className="text-stone-400 italic text-[11px]">Nenhum sabor ainda</span>
             ) : (
@@ -318,8 +401,10 @@ export const FlavorModal: React.FC<FlavorModalProps> = ({ product, onClose, onCo
                 : 'bg-stone-200 text-stone-400 cursor-not-allowed'
             }`}
           >
-            <span>Adicionar</span>
-            <span className="px-1.5 sm:px-2 py-0.5 rounded-full bg-white/25 text-white text-[11px] sm:text-xs">
+            <span>
+              Adicionar {supportsContainer ? (selectedContainer === 'casquinha' ? 'na Casquinha' : 'no Copinho') : ''}
+            </span>
+            <span className="px-1.5 sm:px-2 py-0.5 rounded-full bg-white/25 text-white text-[11px] sm:text-xs font-bold">
               R$ {product.price.toFixed(2).replace('.', ',')}
             </span>
           </button>
