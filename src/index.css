@@ -97,4 +97,44 @@
   #print-root .pos-shift-receipt-print.print-size-xlarge {
     font-size: 17px !important;
   }
+
+  /* Highlighted Large Customer Name for Print */
+  #print-root .pos-receipt-print .customer-highlight-box {
+    margin: 8px 0 !important;
+    padding: 6px 8px !important;
+    border: 2px solid #000000 !important;
+    border-radius: 6px !important;
+    text-align: center !important;
+    background: #ffffff !important;
+    page-break-inside: avoid !important;
+  }
+
+  #print-root .pos-receipt-print .customer-tag {
+    font-size: 10px !important;
+    font-weight: 800 !important;
+    letter-spacing: 1.5px !important;
+    text-transform: uppercase !important;
+    display: block !important;
+    margin-bottom: 2px !important;
+    color: #000000 !important;
+  }
+
+  #print-root .pos-receipt-print .customer-name-large {
+    font-size: 22px !important;
+    font-weight: 900 !important;
+    letter-spacing: 0.5px !important;
+    line-height: 1.18 !important;
+    text-transform: uppercase !important;
+    word-break: break-word !important;
+    display: block !important;
+    color: #000000 !important;
+  }
+
+  #print-root .pos-receipt-print.print-size-large .customer-name-large {
+    font-size: 25px !important;
+  }
+
+  #print-root .pos-receipt-print.print-size-xlarge .customer-name-large {
+    font-size: 28px !important;
+  }
 }

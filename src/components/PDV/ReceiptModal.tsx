@@ -119,28 +119,23 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale: initialSale, o
     const renderTicketBody = () => `
       <div class="text-center">
         <div class="store-title">ELIZA SORVETES</div>
-        <div class="store-sub bold">Sorvetes & Picolés Artesanais</div>
-        <div class="store-sub meta-row">CNPJ: 63.817.939/0001-63</div>
-        <div class="store-sub meta-row">Cupom Não Fiscal: <b>${sale.id}</b></div>
-        <div class="store-sub meta-row">${formattedDate}</div>
+        <div class="store-sub bold" style="margin-top: 2px;">Pedido #${sale.id} • ${formattedDate}</div>
+      </div>
+
+      <!-- CLIENTE EM DESTAQUE E BEM MAIOR -->
+      <div class="customer-highlight-box">
+        <div class="customer-tag">CLIENTE</div>
+        <div class="customer-name-large">${customer.toUpperCase()}</div>
+      </div>
+
+      <div class="row meta-row">
+        <span>Atendente:</span>
+        <span class="bold">${sale.cashierName || 'Eliza'}</span>
       </div>
 
       <div class="dashed-line"></div>
 
-      <div>
-        <div class="row meta-row">
-          <span class="bold">CLIENTE:</span>
-          <span class="bold">${customer}</span>
-        </div>
-        <div class="row meta-row">
-          <span>Operador(a):</span>
-          <span class="bold">${sale.cashierName || 'Eliza'}</span>
-        </div>
-      </div>
-
-      <div class="dashed-line"></div>
-
-      <div class="bold" style="margin-bottom: 6px; letter-spacing: 0.3px;">ITENS DA VENDA:</div>
+      <div class="bold" style="margin-bottom: 5px; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase;">ITENS DO PEDIDO:</div>
       <div>
         ${sale.items.map((item) => `
           <div class="item-group">
@@ -158,28 +153,28 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale: initialSale, o
       <div class="dashed-line"></div>
 
       <div>
-        <div class="row">
+        <div class="row meta-row">
           <span>Subtotal:</span>
           <span class="bold">R$ ${sale.subtotal.toFixed(2).replace('.', ',')}</span>
         </div>
         
         <div class="total-box">
-          <span class="total-val bold">TOTAL A PAGAR:</span>
+          <span class="total-val bold">TOTAL:</span>
           <span class="total-val extra-bold">R$ ${sale.total.toFixed(2).replace('.', ',')}</span>
         </div>
 
-        <div class="row">
-          <span>Forma de Pagamento:</span>
+        <div class="row meta-row">
+          <span>Pagamento:</span>
           <span class="bold">${getPaymentName(sale.paymentMethod)}</span>
         </div>
 
         ${sale.paymentMethod === 'dinheiro' && sale.amountReceived !== undefined ? `
-          <div class="row">
+          <div class="row meta-row">
             <span>Valor Recebido:</span>
             <span class="bold">R$ ${sale.amountReceived.toFixed(2).replace('.', ',')}</span>
           </div>
-          <div class="row bold">
-            <span>Troco Devolvido:</span>
+          <div class="row meta-row bold">
+            <span>Troco:</span>
             <span class="bold">R$ ${(sale.change || 0).toFixed(2).replace('.', ',')}</span>
           </div>
         ` : ''}
@@ -188,8 +183,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale: initialSale, o
       <div class="dashed-line"></div>
 
       <div class="footer">
-        <div>Obrigado pela preferência!</div>
-        <div class="bold" style="margin-top: 2px;">Volte Sempre!</div>
+        <div class="bold">Obrigado pela preferência! Volte Sempre!</div>
+        <div class="store-sub" style="font-size: 10px; margin-top: 3px;">CNPJ: 63.817.939/0001-63</div>
       </div>
     `;
 
@@ -344,7 +339,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale: initialSale, o
       line-height: 1.4;
     }
     .ticket-card.size-normal .store-title { font-size: 18px; }
-    .ticket-card.size-normal .store-sub { font-size: 12px; }
+    .ticket-card.size-normal .store-sub { font-size: 11px; }
+    .ticket-card.size-normal .customer-name-large { font-size: 20px; }
     .ticket-card.size-normal .item-row { font-size: 13.5px; }
     .ticket-card.size-normal .item-flavor { font-size: 11.5px; }
     .ticket-card.size-normal .total-val { font-size: 16.5px; }
@@ -355,7 +351,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale: initialSale, o
       line-height: 1.42;
     }
     .ticket-card.size-large .store-title { font-size: 21px; }
-    .ticket-card.size-large .store-sub { font-size: 13.5px; }
+    .ticket-card.size-large .store-sub { font-size: 12.5px; }
+    .ticket-card.size-large .customer-name-large { font-size: 24px; }
     .ticket-card.size-large .item-row { font-size: 15px; }
     .ticket-card.size-large .item-flavor { font-size: 13px; }
     .ticket-card.size-large .total-val { font-size: 19px; }
@@ -366,7 +363,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale: initialSale, o
       line-height: 1.45;
     }
     .ticket-card.size-xlarge .store-title { font-size: 24px; }
-    .ticket-card.size-xlarge .store-sub { font-size: 15px; }
+    .ticket-card.size-xlarge .store-sub { font-size: 14px; }
+    .ticket-card.size-xlarge .customer-name-large { font-size: 28px; }
     .ticket-card.size-xlarge .item-row { font-size: 17px; }
     .ticket-card.size-xlarge .item-flavor { font-size: 14.5px; }
     .ticket-card.size-xlarge .total-val { font-size: 22px; }
@@ -376,6 +374,35 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale: initialSale, o
     .text-right { text-align: right; }
     .bold { font-weight: 700; }
     .extra-bold { font-weight: 800; }
+
+    /* Cliente Destacado e Maior */
+    .customer-highlight-box {
+      margin: 8px 0;
+      padding: 6px 8px;
+      border: 2px solid #000000;
+      border-radius: 6px;
+      text-align: center;
+      background: #ffffff;
+    }
+
+    .customer-tag {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #000000;
+      margin-bottom: 2px;
+      opacity: 0.85;
+    }
+
+    .customer-name-large {
+      font-weight: 900;
+      letter-spacing: 0.5px;
+      line-height: 1.18;
+      color: #000000;
+      text-transform: uppercase;
+      word-break: break-word;
+    }
     
     .dashed-line {
       border-bottom: 1.5px dashed #000000;
@@ -668,20 +695,18 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale: initialSale, o
 
     return `${doubleLine}
               ELIZA SORVETES
-       Sorvetes & Picolés Artesanais
-         CNPJ: 63.817.939/0001-63
+       Pedido #${sale.id} • ${formattedDate}
+${doubleLine}
+CLIENTE: >>> ${customer.toUpperCase()} <<<
+Atendente: ${sale.cashierName || 'Eliza'}
 ${line}
-Cupom Não Fiscal: ${sale.id}
-Data: ${formattedDate}
-Cliente: ${customer}
-Operador(a): ${sale.cashierName || 'Eliza'}
-${line}
-ITENS:
+ITENS DO PEDIDO:
 ${itemsText}
 ${line}
 ${finance}
 ${line}
    Obrigado pela preferência! Volte sempre!
+           CNPJ: 63.817.939/0001-63
 ${doubleLine}`;
   };
 
@@ -957,31 +982,38 @@ ${doubleLine}`;
                   : 'text-xs leading-normal'
             }`}
           >
-            {/* Store Header */}
-            <div className="text-center pb-3 border-b-2 border-dashed border-black">
+            {/* Store Header Simples */}
+            <div className="text-center pb-2 border-b-2 border-dashed border-black">
               <p className={`font-black tracking-wider uppercase ${fontSize === 'xlarge' ? 'text-lg' : fontSize === 'large' ? 'text-base' : 'text-sm'}`}>
                 Eliza Sorvetes
               </p>
-              <p className="text-xs font-semibold text-black">Sorvetes & Picolés Artesanais</p>
-              <p className="text-[11px] font-medium text-black mt-0.5">CNPJ: 63.817.939/0001-63</p>
-              <p className="text-[11px] font-bold text-black mt-0.5">Cupom Não Fiscal: {sale.id}</p>
-              <p className="text-[11px] font-medium text-black">{formattedDate}</p>
-              <div className="mt-2 pt-1.5 border-t border-dashed border-black text-left">
-                <p className="text-xs text-black">
-                  <span className="font-bold">Cliente:</span>{' '}
-                  <span className="font-extrabold">{sale.customerName || 'Consumidor Final'}</span>
-                </p>
-                <p className="text-[11px] text-black">
-                  <span>Operador(a):</span>{' '}
-                  <span className="font-bold">{sale.cashierName || 'Eliza'}</span>
-                </p>
-              </div>
+              <p className="text-[11px] font-semibold text-black mt-0.5">
+                Pedido #{sale.id} • {formattedDate}
+              </p>
+            </div>
+
+            {/* CLIENTE EM DESTAQUE E BEM MAIOR */}
+            <div className="my-2 p-2 sm:p-2.5 border-2 border-black rounded-lg text-center bg-white">
+              <span className="block text-[10px] font-black tracking-widest text-black/80 uppercase mb-0.5">
+                Cliente
+              </span>
+              <span className={`block font-black uppercase text-black leading-tight break-words ${
+                fontSize === 'xlarge' ? 'text-2xl' : fontSize === 'large' ? 'text-xl' : 'text-lg'
+              }`}>
+                {sale.customerName?.trim() || 'Consumidor Final'}
+              </span>
+            </div>
+
+            {/* Atendente simples */}
+            <div className="flex justify-between text-xs text-black font-semibold pb-1.5 border-b-2 border-dashed border-black">
+              <span>Atendente:</span>
+              <span className="font-bold">{sale.cashierName || 'Eliza'}</span>
             </div>
 
             {/* Item list */}
             <div className="space-y-2 py-1 border-b-2 border-dashed border-black">
               <div className="font-extrabold text-[11px] tracking-wider uppercase text-black">
-                Itens da Venda:
+                Itens do Pedido:
               </div>
               {sale.items.map((item, idx) => (
                 <div key={idx} className="space-y-0.5">
@@ -1045,8 +1077,8 @@ ${doubleLine}`;
 
             {/* Footer note */}
             <div className="text-center pt-2 text-xs font-bold text-black border-t border-dashed border-black">
-              <div>Obrigado pela preferência!</div>
-              <div className="font-extrabold mt-0.5">Volte Sempre!</div>
+              <div>Obrigado pela preferência! Volte Sempre!</div>
+              <div className="text-[10px] text-black/80 mt-0.5 font-normal">CNPJ: 63.817.939/0001-63</div>
             </div>
           </div>
 
@@ -1197,31 +1229,36 @@ ${doubleLine}`;
             fontSize === 'xlarge' ? 'print-size-xlarge' : fontSize === 'large' ? 'print-size-large' : ''
           }`}
         >
-          {/* Store Header */}
-          <div className="text-center pb-2 border-b-2 border-dashed border-black">
+          {/* Store Header Simples */}
+          <div className="text-center pb-1.5 border-b-2 border-dashed border-black">
             <p className="font-black text-sm tracking-wider uppercase">
               Eliza Sorvetes
             </p>
-            <p className="text-xs font-semibold text-black">Sorvetes & Picolés Artesanais</p>
-            <p className="text-[11px] font-medium text-black mt-0.5">CNPJ: 63.817.939/0001-63</p>
-            <p className="text-[11px] font-bold text-black mt-0.5">Cupom Não Fiscal: {sale.id}</p>
-            <p className="text-[11px] font-medium text-black">{formattedDate}</p>
-            <div className="mt-1.5 pt-1.5 border-t border-dashed border-black text-left">
-              <p className="text-xs text-black">
-                <span className="font-bold">Cliente:</span>{' '}
-                <span className="font-extrabold">{sale.customerName || 'Consumidor Final'}</span>
-              </p>
-              <p className="text-[11px] text-black">
-                <span>Operador(a):</span>{' '}
-                <span className="font-bold">{sale.cashierName || 'Eliza'}</span>
-              </p>
-            </div>
+            <p className="text-[11px] font-semibold text-black mt-0.5">
+              Pedido #{sale.id} • {formattedDate}
+            </p>
+          </div>
+
+          {/* CLIENTE EM DESTAQUE E BEM MAIOR */}
+          <div className="customer-highlight-box my-2 p-2 border-2 border-black rounded-lg text-center bg-white">
+            <span className="customer-tag block text-[10px] font-black tracking-widest uppercase">
+              Cliente
+            </span>
+            <span className="customer-name-large block font-black uppercase text-xl leading-tight">
+              {sale.customerName?.trim() || 'Consumidor Final'}
+            </span>
+          </div>
+
+          {/* Atendente simples */}
+          <div className="flex justify-between text-xs text-black font-semibold pb-1.5 border-b-2 border-dashed border-black">
+            <span>Atendente:</span>
+            <span className="font-bold">{sale.cashierName || 'Eliza'}</span>
           </div>
 
           {/* Item list */}
           <div className="space-y-1.5 py-2 border-b-2 border-dashed border-black">
             <div className="font-extrabold text-[11px] tracking-wider uppercase text-black">
-              Itens da Venda:
+              Itens do Pedido:
             </div>
             {sale.items.map((item, idx) => (
               <div key={idx} className="space-y-0.5">
@@ -1273,8 +1310,8 @@ ${doubleLine}`;
 
           {/* Footer note */}
           <div className="text-center pt-2 text-xs font-bold text-black border-t border-dashed border-black mt-2">
-            <div>Obrigado pela preferência!</div>
-            <div className="font-extrabold mt-0.5">Volte Sempre!</div>
+            <div>Obrigado pela preferência! Volte Sempre!</div>
+            <div className="text-[10px] text-black/80 mt-0.5 font-normal">CNPJ: 63.817.939/0001-63</div>
           </div>
         </div>,
         document.getElementById('print-root')!
