@@ -140,14 +140,18 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale: initialSale, o
         ${sale.items.map((item) => `
           <div class="item-group">
             <div class="item-row">
-              <span class="item-name"><b>${item.quantity}x</b> ${item.productName}${item.container ? ` (${item.container === 'casquinha' ? 'Casquinha' : 'Copinho'})` : ''}</span>
+              <span class="item-name"><b>${item.quantity}x</b> ${item.productName}</span>
               <span class="item-price">R$ ${(item.price * item.quantity).toFixed(2).replace('.', ',')}</span>
             </div>
-            ${item.container ? `
-              <div class="item-flavor" style="font-weight: 700; color: #000;">• Embalagem: ${item.container === 'casquinha' ? 'Casquinha' : 'Copinho'}</div>
-            ` : ''}
             ${item.selectedFlavors.length > 0 ? `
-              <div class="item-flavor">• Sabor: ${item.selectedFlavors.join(' + ')}</div>
+              <div class="item-flavors-block">
+                ${item.selectedFlavors.map((flavor, fIndex) => `
+                  <div class="item-flavor">• Sabor ${item.selectedFlavors.length > 1 ? `${fIndex + 1}: ` : ''}${flavor}</div>
+                `).join('')}
+              </div>
+            ` : ''}
+            ${item.container ? `
+              <div class="item-container-tag">• ${item.container === 'casquinha' ? 'Casquinha' : 'Copinho'}</div>
             ` : ''}
           </div>
         `).join('')}
@@ -464,6 +468,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale: initialSale, o
       margin-top: 1px;
     }
 
+    .item-container-tag {
+      color: #000000;
+      font-weight: 800;
+      padding-left: 8px;
+      margin-top: 2px;
+      text-transform: capitalize;
+    }
+
     .total-box {
       border-top: 2px solid #000000;
       border-bottom: 2px solid #000000;
@@ -684,12 +696,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale: initialSale, o
     const doubleLine = '==========================================';
 
     const itemsText = sale.items.map((item) => {
-      let t = `${item.quantity}x ${item.productName}${item.container ? ` (${item.container === 'casquinha' ? 'Casquinha' : 'Copinho'})` : ''} - R$ ${(item.price * item.quantity).toFixed(2).replace('.', ',')}`;
-      if (item.container) {
-        t += `\n   Embalagem: ${item.container === 'casquinha' ? 'Casquinha' : 'Copinho'}`;
-      }
+      let t = `${item.quantity}x ${item.productName} - R$ ${(item.price * item.quantity).toFixed(2).replace('.', ',')}`;
       if (item.selectedFlavors.length > 0) {
-        t += `\n   Sabores: ${item.selectedFlavors.join(' + ')}`;
+        item.selectedFlavors.forEach((flavor, fIdx) => {
+          t += `\n   • Sabor ${item.selectedFlavors.length > 1 ? `${fIdx + 1}: ` : ''}${flavor}`;
+        });
+      }
+      if (item.container) {
+        t += `\n   • ${item.container === 'casquinha' ? 'Casquinha' : 'Copinho'}`;
       }
       return t;
     }).join('\n');
@@ -1022,28 +1036,27 @@ ${doubleLine}`;
                 Itens do Pedido:
               </div>
               {sale.items.map((item, idx) => (
-                <div key={idx} className="space-y-0.5">
+                <div key={idx} className="space-y-0.5 pb-1 border-b border-dashed border-black/20 last:border-0 last:pb-0">
                   <div className="flex justify-between font-bold text-black">
                     <span className="pr-2">
                       <b>{item.quantity}x</b> {item.productName}
-                      {item.container && (
-                        <span className="ml-1 text-[11px] font-bold text-stone-700">
-                          ({item.container === 'casquinha' ? 'Casquinha' : 'Copinho'})
-                        </span>
-                      )}
                     </span>
                     <span className="whitespace-nowrap font-black">
                       R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}
                     </span>
                   </div>
-                  {item.container && (
-                    <p className="text-xs text-black font-semibold pl-2">
-                      • Embalagem: {item.container === 'casquinha' ? '🍦 Casquinha' : '🍧 Copinho'}
-                    </p>
-                  )}
                   {item.selectedFlavors.length > 0 && (
-                    <p className="text-xs text-black font-medium pl-2">
-                      • Sabor: {item.selectedFlavors.join(' + ')}
+                    <div className="space-y-0.5 pl-2">
+                      {item.selectedFlavors.map((flavor, fIdx) => (
+                        <p key={fIdx} className="text-xs text-black font-semibold">
+                          • Sabor {item.selectedFlavors.length > 1 ? `${fIdx + 1}: ` : ''}{flavor}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {item.container && (
+                    <p className="text-xs text-black font-extrabold pl-2">
+                      • {item.container === 'casquinha' ? 'Casquinha' : 'Copinho'}
                     </p>
                   )}
                 </div>
@@ -1277,7 +1290,7 @@ ${doubleLine}`;
               Itens do Pedido:
             </div>
             {sale.items.map((item, idx) => (
-              <div key={idx} className="space-y-0.5">
+              <div key={idx} className="space-y-0.5 pb-1 border-b border-dashed border-black/20 last:border-0 last:pb-0">
                 <div className="flex justify-between font-bold text-black">
                   <span className="pr-2">
                     <b>{item.quantity}x</b> {item.productName}
@@ -1287,8 +1300,17 @@ ${doubleLine}`;
                   </span>
                 </div>
                 {item.selectedFlavors.length > 0 && (
-                  <p className="text-xs text-black font-medium pl-2">
-                    • Sabor: {item.selectedFlavors.join(' + ')}
+                  <div className="space-y-0.5 pl-2">
+                    {item.selectedFlavors.map((flavor, fIdx) => (
+                      <p key={fIdx} className="text-xs text-black font-semibold">
+                        • Sabor {item.selectedFlavors.length > 1 ? `${fIdx + 1}: ` : ''}{flavor}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {item.container && (
+                  <p className="text-xs text-black font-extrabold pl-2">
+                    • {item.container === 'casquinha' ? 'Casquinha' : 'Copinho'}
                   </p>
                 )}
               </div>
