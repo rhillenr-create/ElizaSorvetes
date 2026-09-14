@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   Product, 
   CartItem, 
@@ -266,8 +266,14 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Sales state with safeStorage (defaults to empty or saved)
   const [sales, setSales] = useState<Sale[]>(() => {
     const saved = safeStorage.get<Sale[]>('eliza_sales', INITIAL_SALES);
-    return Array.isArray(saved) ? saved : [];
+    const deleted = new Set(safeStorage.get<string[]>('eliza_deleted_sale_ids', []));
+    const valid = Array.isArray(saved) ? saved.filter((s) => !deleted.has(s.id)) : [];
+    return valid;
   });
+
+  // Track deleted sales IDs to prevent resurrection from pending sync or onSnapshot race conditions
+  const deletedSaleIdsRef = useRef<Set<string>>(new Set(safeStorage.get<string[]>('eliza_deleted_sale_ids', [])));
+  const [deletedSaleIds, setDeletedSaleIds] = useState<Set<string>>(() => deletedSaleIdsRef.current);
 
   // Cart state with safeStorage
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -533,13 +539,15 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             } as Sale;
           });
 
-          cloudSales.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          // Filter out any sales that were deleted locally or in the deleted set
+          const activeCloudSales = cloudSales.filter((s) => !deletedSaleIdsRef.current.has(s.id));
+          activeCloudSales.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
           setSales((currentLocal) => {
-            const cloudIds = new Set(cloudSales.map((s) => s.id));
-            const pendingLocal = currentLocal.filter((local) => !cloudIds.has(local.id));
+            const cloudIds = new Set(activeCloudSales.map((s) => s.id));
+            const pendingLocal = currentLocal.filter((local) => !cloudIds.has(local.id) && !deletedSaleIdsRef.current.has(local.id));
 
-            // Push pending local sales to Firestore so they are never lost
+            // Push pending local sales to Firestore so they are never lost (never push deleted ones)
             if (pendingLocal.length > 0) {
               pendingLocal.forEach((p) => {
                 setDoc(doc(db, 'sales', p.id), cleanForFirestore(p), { merge: true }).catch((e) => {
@@ -548,7 +556,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               });
             }
 
-            const combined = [...cloudSales, ...pendingLocal];
+            const combined = [...activeCloudSales, ...pendingLocal];
             combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
             safeStorage.set('eliza_sales', combined);
             return combined;
@@ -988,12 +996,18 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Cancel / Delete a sale with optional stock restoration
   const deleteSale = (saleId: string, restoreStock = true): boolean => {
+    // Check in memory or find by id
     const saleToDelete = sales.find((s) => s.id === saleId);
-    if (!saleToDelete) return false;
+
+    // Add to deleted IDs set immediately to prevent resurrection
+    deletedSaleIdsRef.current.add(saleId);
+    const updatedDeletedList = Array.from(deletedSaleIdsRef.current);
+    safeStorage.set('eliza_deleted_sale_ids', updatedDeletedList);
+    setDeletedSaleIds(new Set(deletedSaleIdsRef.current));
 
     let restoredStockItems: StockItem[] = [];
 
-    if (restoreStock) {
+    if (saleToDelete && restoreStock) {
       setStock((currentStock) => {
         const stockMap = new Map<string, StockItem>(currentStock.map((s) => [s.id, { ...s }]));
         const today = getBrazilDateString();
@@ -1043,37 +1057,43 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Immediately remove from state and local storage
-    setSales((prev) => {
-      const updated = prev.filter((s) => s.id !== saleId);
-      safeStorage.set('eliza_sales', updated);
-      return updated;
-    });
+    const updatedSales = sales.filter((s) => s.id !== saleId);
+    setSales(updatedSales);
+    safeStorage.set('eliza_sales', updatedSales);
 
     if (lastCompletedSale?.id === saleId) {
       setLastCompletedSale(null);
     }
 
-    // Adjust active cash shift metrics if applicable
+    // Reconcile active cash shift metrics accurately using reconcileShiftWithSales
     if (activeShift) {
-      setActiveShift((currentShift) => {
-        if (!currentShift) return null;
-        const updatedShift: CashShift = {
-          ...currentShift,
-          totalSalesCount: Math.max(0, currentShift.totalSalesCount - 1),
-          totalSalesAmount: Math.max(0, currentShift.totalSalesAmount - saleToDelete.total),
-          totalCashSales: saleToDelete.paymentMethod === 'dinheiro' ? Math.max(0, currentShift.totalCashSales - saleToDelete.total) : currentShift.totalCashSales,
-          totalPixSales: saleToDelete.paymentMethod === 'pix' ? Math.max(0, currentShift.totalPixSales - saleToDelete.total) : currentShift.totalPixSales,
-          totalDebitSales: saleToDelete.paymentMethod === 'cartao_debito' ? Math.max(0, currentShift.totalDebitSales - saleToDelete.total) : currentShift.totalDebitSales,
-          totalCreditSales: saleToDelete.paymentMethod === 'cartao_credito' ? Math.max(0, currentShift.totalCreditSales - saleToDelete.total) : currentShift.totalCreditSales,
-        };
-
-        const sumSuprimentos = updatedShift.movements.filter((m) => m.type === 'suprimento').reduce((a, b) => a + b.amount, 0);
-        const sumSangrias = updatedShift.movements.filter((m) => m.type === 'sangria').reduce((a, b) => a + b.amount, 0);
-        updatedShift.expectedCash = updatedShift.initialCash + updatedShift.totalCashSales + sumSuprimentos - sumSangrias;
-
+      const { updatedShift, changed } = reconcileShiftWithSales(activeShift, updatedSales);
+      if (changed) {
+        setActiveShift(updatedShift);
         safeStorage.set('eliza_active_shift', updatedShift);
         setDoc(doc(db, 'cash_shifts', updatedShift.id), cleanForFirestore(updatedShift), { merge: true }).catch(() => {});
-        return updatedShift;
+      }
+    }
+
+    // Reconcile in closed shifts history if this sale was in a past shift
+    if (saleToDelete?.shiftId) {
+      setShiftsHistory((prevHistory) => {
+        let historyChanged = false;
+        const newHistory = prevHistory.map((sh) => {
+          if (sh.id === saleToDelete.shiftId) {
+            const { updatedShift, changed } = reconcileShiftWithSales(sh, updatedSales);
+            if (changed) {
+              historyChanged = true;
+              setDoc(doc(db, 'cash_shifts', updatedShift.id), cleanForFirestore(updatedShift), { merge: true }).catch(() => {});
+              return updatedShift;
+            }
+          }
+          return sh;
+        });
+        if (historyChanged) {
+          safeStorage.set('eliza_shifts_history', newHistory);
+        }
+        return newHistory;
       });
     }
 
@@ -1091,12 +1111,11 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Atualiza automaticamente o relatório diário e mensal no Firestore
-    const remainingSales = sales.filter((s) => s.id !== saleId);
-    const saleDate = getBrazilDateString(saleToDelete.timestamp);
-    const updatedDailyReport = buildDailySalesReport(saleDate, remainingSales, operatorUser?.name);
+    const saleDate = saleToDelete ? getBrazilDateString(saleToDelete.timestamp) : getBrazilDateString();
+    const updatedDailyReport = buildDailySalesReport(saleDate, updatedSales, operatorUser?.name);
     persistReportToFirestore(updatedDailyReport).catch(() => {});
     const saleMonth = saleDate.slice(0, 7);
-    const updatedMonthlyReport = buildMonthlySalesReport(saleMonth, remainingSales, operatorUser?.name);
+    const updatedMonthlyReport = buildMonthlySalesReport(saleMonth, updatedSales, operatorUser?.name);
     persistReportToFirestore(updatedMonthlyReport).catch(() => {});
 
     return true;
@@ -1188,12 +1207,21 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Delete all test / existing sales completely
   const deleteAllSales = async (): Promise<boolean> => {
     try {
+      // Record all existing sale IDs in deleted list
+      sales.forEach((s) => deletedSaleIdsRef.current.add(s.id));
+      safeStorage.set('eliza_deleted_sale_ids', Array.from(deletedSaleIdsRef.current));
+      setDeletedSaleIds(new Set(deletedSaleIdsRef.current));
+
       setSales([]);
       safeStorage.set('eliza_sales', []);
       setLastCompletedSale(null);
 
       const snap = await getDocs(collection(db, 'sales'));
-      const deletes = snap.docs.map((d) => deleteDoc(doc(db, 'sales', d.id)));
+      const deletes = snap.docs.map((d) => {
+        deletedSaleIdsRef.current.add(d.id);
+        return deleteDoc(doc(db, 'sales', d.id));
+      });
+      safeStorage.set('eliza_deleted_sale_ids', Array.from(deletedSaleIdsRef.current));
       await Promise.all(deletes);
 
       // Limpar ou resetar relatórios no Firestore
