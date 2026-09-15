@@ -266,14 +266,14 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Sales state with safeStorage (defaults to empty or saved)
   const [sales, setSales] = useState<Sale[]>(() => {
     const saved = safeStorage.get<Sale[]>('eliza_sales', INITIAL_SALES);
-    const deleted = new Set(safeStorage.get<string[]>('eliza_deleted_sale_ids', []));
-    const valid = Array.isArray(saved) ? saved.filter((s) => !deleted.has(s.id)) : [];
-    return valid;
+    return Array.isArray(saved) ? saved : [];
   });
 
-  // Track deleted sales IDs to prevent resurrection from pending sync or onSnapshot race conditions
-  const deletedSaleIdsRef = useRef<Set<string>>(new Set(safeStorage.get<string[]>('eliza_deleted_sale_ids', [])));
-  const [deletedSaleIds, setDeletedSaleIds] = useState<Set<string>>(() => deletedSaleIdsRef.current);
+  // Track pending local sales that haven't been confirmed in Firestore snapshot yet
+  const pendingLocalSalesRef = useRef<Map<string, Sale>>(new Map());
+
+  // Track local sales being deleted to prevent optimistic flicker before Firestore deleteDoc finishes
+  const localDeletedIdsRef = useRef<Set<string>>(new Set());
 
   // Cart state with safeStorage
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -521,45 +521,64 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubSales = onSnapshot(
         collection(db, salesPath),
         (snapshot) => {
-          const cloudSales: Sale[] = snapshot.docs.map((d) => {
-            const data = d.data() as any;
-            return {
-              id: String(data?.id || d.id),
-              timestamp: String(data?.timestamp || getBrazilIsoTimestamp()),
-              items: Array.isArray(data?.items) ? data.items : [],
-              subtotal: typeof data?.subtotal === 'number' ? data.subtotal : (data?.total || 0),
-              discount: typeof data?.discount === 'number' ? data.discount : 0,
-              total: typeof data?.total === 'number' ? data.total : 0,
-              paymentMethod: data?.paymentMethod || 'dinheiro',
-              amountReceived: data?.amountReceived,
-              change: data?.change,
-              cashierName: data?.cashierName || 'Eliza',
-              customerName: data?.customerName || 'Consumidor Final',
-              shiftId: data?.shiftId || undefined
-            } as Sale;
+          // Remove any confirmed sales from pending queue
+          snapshot.docs.forEach((d) => {
+            pendingLocalSalesRef.current.delete(d.id);
           });
 
-          // Filter out any sales that were deleted locally or in the deleted set
-          const activeCloudSales = cloudSales.filter((s) => !deletedSaleIdsRef.current.has(s.id));
-          activeCloudSales.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-          setSales((currentLocal) => {
-            const cloudIds = new Set(activeCloudSales.map((s) => s.id));
-            const pendingLocal = currentLocal.filter((local) => !cloudIds.has(local.id) && !deletedSaleIdsRef.current.has(local.id));
-
-            // Push pending local sales to Firestore so they are never lost (never push deleted ones)
-            if (pendingLocal.length > 0) {
-              pendingLocal.forEach((p) => {
-                setDoc(doc(db, 'sales', p.id), cleanForFirestore(p), { merge: true }).catch((e) => {
-                  console.warn('Tentativa de sincronizar venda pendente:', p.id, e);
-                });
-              });
+          // Clean up localDeletedIds for documents that have now been deleted from Firestore
+          localDeletedIdsRef.current.forEach((id) => {
+            if (!snapshot.docs.some((d) => d.id === id)) {
+              localDeletedIdsRef.current.delete(id);
             }
+          });
 
-            const combined = [...activeCloudSales, ...pendingLocal];
-            combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-            safeStorage.set('eliza_sales', combined);
-            return combined;
+          // Map all Firestore docs to Sales, excluding any still waiting on local deleteDoc confirmation
+          const cloudSales: Sale[] = snapshot.docs
+            .filter((d) => !localDeletedIdsRef.current.has(d.id))
+            .map((d) => {
+              const data = d.data() as any;
+              return {
+                id: String(data?.id || d.id),
+                timestamp: String(data?.timestamp || getBrazilIsoTimestamp()),
+                items: Array.isArray(data?.items) ? data.items : [],
+                subtotal: typeof data?.subtotal === 'number' ? data.subtotal : (data?.total || 0),
+                discount: typeof data?.discount === 'number' ? data.discount : 0,
+                total: typeof data?.total === 'number' ? data.total : 0,
+                paymentMethod: data?.paymentMethod || 'dinheiro',
+                amountReceived: data?.amountReceived,
+                change: data?.change,
+                cashierName: data?.cashierName || 'Eliza',
+                customerName: data?.customerName || 'Consumidor Final',
+                shiftId: data?.shiftId || undefined
+              } as Sale;
+            });
+
+          // Any unconfirmed sales locally created while waiting for sync
+          const unconfirmedPending: Sale[] = (Array.from(pendingLocalSalesRef.current.values()) as Sale[])
+            .filter((p: Sale) => !localDeletedIdsRef.current.has(p.id) && !cloudSales.some((c) => c.id === p.id));
+
+          // If offline pending sales exist, attempt to push them to Firestore
+          if (unconfirmedPending.length > 0) {
+            unconfirmedPending.forEach((p: Sale) => {
+              setDoc(doc(db, 'sales', p.id), cleanForFirestore(p)).catch((e) => {
+                console.warn('Tentativa de sincronizar venda pendente:', p.id, e);
+              });
+            });
+          }
+
+          const combinedSales: Sale[] = [...cloudSales, ...unconfirmedPending];
+          combinedSales.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+          setSales(combinedSales);
+          safeStorage.set('eliza_sales', combinedSales);
+
+          // If lastCompletedSale was deleted remotely or locally, reset it
+          setLastCompletedSale((curr) => {
+            if (curr && !combinedSales.some((s) => s.id === curr.id)) {
+              return null;
+            }
+            return curr;
           });
 
           setSyncStatus('synced');
@@ -939,6 +958,9 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStock(modifiedStockItems);
     safeStorage.set('eliza_stock', modifiedStockItems);
 
+    // Track pending sale locally until confirmed by Firestore onSnapshot
+    pendingLocalSalesRef.current.set(newSale.id, newSale);
+
     const updatedSalesList = [newSale, ...sales];
     setSales(updatedSalesList);
     safeStorage.set('eliza_sales', updatedSalesList);
@@ -999,11 +1021,9 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Check in memory or find by id
     const saleToDelete = sales.find((s) => s.id === saleId);
 
-    // Add to deleted IDs set immediately to prevent resurrection
-    deletedSaleIdsRef.current.add(saleId);
-    const updatedDeletedList = Array.from(deletedSaleIdsRef.current);
-    safeStorage.set('eliza_deleted_sale_ids', updatedDeletedList);
-    setDeletedSaleIds(new Set(deletedSaleIdsRef.current));
+    // Track local deletion immediately to prevent onSnapshot flicker
+    localDeletedIdsRef.current.add(saleId);
+    pendingLocalSalesRef.current.delete(saleId);
 
     let restoredStockItems: StockItem[] = [];
 
@@ -1207,21 +1227,20 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Delete all test / existing sales completely
   const deleteAllSales = async (): Promise<boolean> => {
     try {
-      // Record all existing sale IDs in deleted list
-      sales.forEach((s) => deletedSaleIdsRef.current.add(s.id));
-      safeStorage.set('eliza_deleted_sale_ids', Array.from(deletedSaleIdsRef.current));
-      setDeletedSaleIds(new Set(deletedSaleIdsRef.current));
+      // Record all existing sale IDs in local deleted list to prevent flicker
+      sales.forEach((s) => localDeletedIdsRef.current.add(s.id));
+      pendingLocalSalesRef.current.clear();
 
       setSales([]);
       safeStorage.set('eliza_sales', []);
+      safeStorage.remove('eliza_deleted_sale_ids');
       setLastCompletedSale(null);
 
       const snap = await getDocs(collection(db, 'sales'));
       const deletes = snap.docs.map((d) => {
-        deletedSaleIdsRef.current.add(d.id);
+        localDeletedIdsRef.current.add(d.id);
         return deleteDoc(doc(db, 'sales', d.id));
       });
-      safeStorage.set('eliza_deleted_sale_ids', Array.from(deletedSaleIdsRef.current));
       await Promise.all(deletes);
 
       // Limpar ou resetar relatórios no Firestore
