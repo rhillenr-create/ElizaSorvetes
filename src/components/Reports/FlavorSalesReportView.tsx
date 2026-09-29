@@ -5,6 +5,8 @@ import { Sale } from '../../types';
 import { 
   generateFlavorSalesReport, 
   exportFlavorReportToCsv, 
+  exportFlavorReportToExcel,
+  exportFlavorReportToPdf,
   FlavorSaleReportItem, 
   FlavorReportSummary 
 } from '../../utils/flavorReportHelper';
@@ -31,7 +33,9 @@ import {
   X, 
   Flame, 
   Layers,
-  ChevronDown
+  ChevronDown,
+  FileSpreadsheet,
+  FileText
 } from 'lucide-react';
 
 export type FlavorPeriodFilter = 
@@ -255,6 +259,34 @@ export const FlavorSalesReportView: React.FC = () => {
     () => processList(reportSummary.allFlavors),
     [reportSummary.allFlavors, searchTerm, sortOption]
   );
+
+  // Excel Export handler (.xlsx)
+  const handleExportExcel = async () => {
+    let itemsToExport = reportSummary.allFlavors;
+    if (categoryFilter === 'sorvete') itemsToExport = reportSummary.iceCreamFlavors;
+    if (categoryFilter === 'picole') itemsToExport = reportSummary.popsicleFlavors;
+
+    try {
+      await exportFlavorReportToExcel(itemsToExport, periodLabel, reportSummary);
+      showToast('Planilha Excel (.xlsx) de sabores gerada com sucesso!');
+    } catch (e: any) {
+      showToast(e.message || 'Erro ao exportar Excel', 'error');
+    }
+  };
+
+  // PDF Export handler (.pdf)
+  const handleExportPdf = async () => {
+    let itemsToExport = reportSummary.allFlavors;
+    if (categoryFilter === 'sorvete') itemsToExport = reportSummary.iceCreamFlavors;
+    if (categoryFilter === 'picole') itemsToExport = reportSummary.popsicleFlavors;
+
+    try {
+      await exportFlavorReportToPdf(itemsToExport, periodLabel, reportSummary);
+      showToast('Relatório em PDF de sabores baixado com sucesso!');
+    } catch (e: any) {
+      showToast(e.message || 'Erro ao exportar PDF', 'error');
+    }
+  };
 
   // CSV Export handler
   const handleExportCsv = () => {
@@ -585,13 +617,24 @@ export const FlavorSalesReportView: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
             <button
               type="button"
-              id="btn-export-flavor-csv"
-              onClick={handleExportCsv}
+              id="btn-export-flavor-excel"
+              onClick={handleExportExcel}
               className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-              title="Baixar planilha CSV compatível com Excel com todos os sabores e métricas"
+              title="Baixar planilha nativa do Excel (.xlsx) com abas de ranking e resumo executivo"
             >
-              <Download className="w-4 h-4" />
-              <span>Exportar Excel / CSV</span>
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Excel (.xlsx)</span>
+            </button>
+
+            <button
+              type="button"
+              id="btn-export-flavor-pdf"
+              onClick={handleExportPdf}
+              className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title="Baixar relatório oficial de vendas por sabor em arquivo PDF"
+            >
+              <FileText className="w-4 h-4" />
+              <span>Baixar PDF</span>
             </button>
 
             <button
@@ -599,10 +642,20 @@ export const FlavorSalesReportView: React.FC = () => {
               id="btn-print-flavor-report"
               onClick={handlePrint}
               className="px-3.5 py-2 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-              title="Imprimir relatório completo de sabores"
+              title="Imprimir relatório completo de sabores ou salvar pelo navegador"
             >
               <Printer className="w-4 h-4 text-stone-600" />
-              <span>Imprimir Relatório</span>
+              <span>Imprimir</span>
+            </button>
+
+            <button
+              type="button"
+              id="btn-export-flavor-csv"
+              onClick={handleExportCsv}
+              className="px-2.5 py-2 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
+              title="Baixar dados em formato CSV"
+            >
+              <span>CSV</span>
             </button>
           </div>
         </div>

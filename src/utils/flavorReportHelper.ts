@@ -584,3 +584,204 @@ export function exportFlavorReportToCsv(
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Exporta o relatório completo de sabores para arquivo nativo Microsoft Excel (.xlsx)
+ */
+export async function exportFlavorReportToExcel(
+  items: FlavorSaleReportItem[],
+  periodLabel: string,
+  summary: FlavorReportSummary
+): Promise<void> {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.utils.book_new();
+
+  // Aba 1: Sabores e Vendas
+  const rows = items.map((item) => ({
+    'Categoria': item.categoryLabel,
+    'Posição': item.rank ? `#${item.rank}` : '-',
+    'Sabor': item.name,
+    'Qtd Vendida (Bolas/Un)': item.quantitySold,
+    'Faturamento Total (R$)': Number(item.totalRevenue.toFixed(2)),
+    'Preço Médio (R$)': Number(item.averagePrice.toFixed(2)),
+    '% Categoria': Number(item.percentageOfCategory.toFixed(1)),
+    '% Faturamento Total': Number(item.percentageOfTotal.toFixed(1)),
+    'Pedidos': item.salesCount,
+    'Casquinhas': item.category === 'sorvete' ? item.casquinhaCount : '-',
+    'Copinhos': item.category === 'sorvete' ? item.copinhoCount : '-',
+    'Estoque': item.currentStock !== undefined ? item.currentStock : 'N/C',
+    'Unidade': item.stockUnit || '-',
+    'Status Estoque': item.stockStatus.toUpperCase(),
+    'Regional Paraense': item.isRegional ? 'SIM' : 'NÃO',
+    'Contém Nutella': item.isNutella ? 'SIM' : 'NÃO'
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 20 }, // Categoria
+    { wch: 10 }, // Posição
+    { wch: 28 }, // Sabor
+    { wch: 18 }, // Qtd
+    { wch: 18 }, // Faturamento
+    { wch: 15 }, // Preço Médio
+    { wch: 14 }, // % Categoria
+    { wch: 16 }, // % Total
+    { wch: 12 }, // Pedidos
+    { wch: 12 }, // Casquinhas
+    { wch: 12 }, // Copinhos
+    { wch: 12 }, // Estoque
+    { wch: 10 }, // Unidade
+    { wch: 15 }, // Status
+    { wch: 14 }, // Regional
+    { wch: 14 }  // Nutella
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, 'Ranking de Sabores');
+
+  // Aba 2: Resumo Executivo
+  const summaryRows = [
+    { 'Métrica / Indicador': 'Período Apurado', 'Valor': periodLabel },
+    { 'Métrica / Indicador': 'Data de Emissão', 'Valor': new Date().toLocaleString('pt-BR') },
+    { 'Métrica / Indicador': 'Total Geral de Pedidos', 'Valor': summary.totalSalesCount },
+    { 'Métrica / Indicador': 'Faturamento Geral Total (R$)', 'Valor': Number(summary.totalSalesRevenue.toFixed(2)) },
+    { 'Métrica / Indicador': 'Total de Produtos Vendidos', 'Valor': summary.totalProductsSold },
+    { 'Métrica / Indicador': 'Faturamento Sorvetes (R$)', 'Valor': Number(summary.totalIceCreamRevenue.toFixed(2)) },
+    { 'Métrica / Indicador': 'Bolas de Sorvete Vendidas', 'Valor': summary.totalIceCreamSold },
+    { 'Métrica / Indicador': 'Faturamento Picolés (R$)', 'Valor': Number(summary.totalPopsicleRevenue.toFixed(2)) },
+    { 'Métrica / Indicador': 'Picolés Vendidos', 'Valor': summary.totalPopsicleSold },
+    { 'Métrica / Indicador': 'Outros Produtos / Bebidas (R$)', 'Valor': Number(summary.otherProductsRevenue.toFixed(2)) },
+    { 'Métrica / Indicador': 'Sabor Campeão Geral', 'Valor': summary.topOverallFlavor ? `${summary.topOverallFlavor.name} (${summary.topOverallFlavor.totalQuantity} un)` : 'Nenhum' },
+    { 'Métrica / Indicador': 'Sabor Campeão Sorvete', 'Valor': summary.topIceCream ? `${summary.topIceCream.name} (${summary.topIceCream.quantitySold} bolas)` : 'Nenhum' },
+    { 'Métrica / Indicador': 'Sabor Campeão Picolé', 'Valor': summary.topPopsicle ? `${summary.topPopsicle.name} (${summary.topPopsicle.quantitySold} un)` : 'Nenhum' }
+  ];
+  const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+  wsSummary['!cols'] = [{ wch: 32 }, { wch: 35 }];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumo Executivo');
+
+  const safeDate = periodLabel.replace(/[/\\?%*:|"<> ]/g, '_');
+  XLSX.writeFile(wb, `eliza_relatorio_sabores_${safeDate}.xlsx`);
+}
+
+/**
+ * Exporta o relatório de sabores para arquivo PDF oficial
+ */
+export async function exportFlavorReportToPdf(
+  items: FlavorSaleReportItem[],
+  periodLabel: string,
+  summary: FlavorReportSummary
+): Promise<void> {
+  const { default: jsPDF } = await import('jspdf');
+  const autoTableModule = await import('jspdf-autotable');
+  const autoTable = (autoTableModule.default || autoTableModule) as any;
+
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  // Cabeçalho
+  doc.setFillColor(190, 18, 60);
+  doc.rect(14, 10, 182, 3, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(159, 18, 57);
+  doc.text('ELIZA SORVETES ARTESANAIS', 14, 20);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(31, 41, 55);
+  doc.text('RELATÓRIO DE VENDAS POR SABOR', 14, 26);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(107, 114, 128);
+  doc.text(`Período Apurado: ${periodLabel}   •   Emissão: ${new Date().toLocaleString('pt-BR')}`, 14, 31);
+
+  // KPI boxes
+  const kpiY = 34;
+  doc.setFillColor(249, 250, 251);
+  doc.setDrawColor(229, 231, 235);
+
+  doc.roundedRect(14, kpiY, 42, 13, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.setTextColor(107, 114, 128);
+  doc.text('FATURAMENTO TOTAL', 17, kpiY + 4);
+  doc.setFontSize(10);
+  doc.setTextColor(6, 95, 70);
+  doc.text(`R$ ${summary.totalSalesRevenue.toFixed(2).replace('.', ',')}`, 17, kpiY + 9.5);
+
+  doc.roundedRect(59, kpiY, 42, 13, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.setTextColor(107, 114, 128);
+  doc.text('SORVETES DE MASSA', 62, kpiY + 4);
+  doc.setFontSize(9.5);
+  doc.setTextColor(31, 41, 55);
+  doc.text(`R$ ${summary.totalIceCreamRevenue.toFixed(2).replace('.', ',')}`, 62, kpiY + 9.5);
+
+  doc.roundedRect(104, kpiY, 42, 13, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.setTextColor(107, 114, 128);
+  doc.text('PICOLÉS ARTESANAIS', 107, kpiY + 4);
+  doc.setFontSize(9.5);
+  doc.setTextColor(31, 41, 55);
+  doc.text(`R$ ${summary.totalPopsicleRevenue.toFixed(2).replace('.', ',')}`, 107, kpiY + 9.5);
+
+  doc.roundedRect(149, kpiY, 47, 13, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.setTextColor(107, 114, 128);
+  doc.text('SABOR CAMPEÃO GERAL', 152, kpiY + 4);
+  doc.setFontSize(8.5);
+  doc.setTextColor(159, 18, 57);
+  doc.text(summary.topOverallFlavor ? `${summary.topOverallFlavor.name.substring(0, 18)}` : 'Nenhum', 152, kpiY + 9.5);
+
+  // Tabela
+  const tableHead = [['#', 'Sabor', 'Categoria', 'Qtd Vendida', 'Faturamento (R$)', 'Preço Médio', '% Segmento']];
+  const tableBody = items.map((it) => [
+    it.rank ? `#${it.rank}` : '-',
+    it.name,
+    it.categoryLabel,
+    String(it.quantitySold),
+    `R$ ${it.totalRevenue.toFixed(2).replace('.', ',')}`,
+    `R$ ${it.averagePrice.toFixed(2).replace('.', ',')}`,
+    `${it.percentageOfCategory.toFixed(1).replace('.', ',')}%`
+  ]);
+
+  autoTable(doc, {
+    startY: 50,
+    head: tableHead,
+    body: tableBody,
+    theme: 'striped',
+    headStyles: {
+      fillColor: [190, 18, 60],
+      textColor: [255, 255, 255],
+      fontSize: 8,
+      fontStyle: 'bold'
+    },
+    bodyStyles: {
+      fontSize: 7.5,
+      textColor: [55, 65, 81],
+      cellPadding: 2
+    },
+    alternateRowStyles: {
+      fillColor: [255, 248, 248]
+    },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 50, fontStyle: 'bold' },
+      2: { cellWidth: 32 },
+      3: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+      4: { cellWidth: 26, halign: 'right', fontStyle: 'bold', textColor: [6, 95, 70] },
+      5: { cellWidth: 22, halign: 'right' },
+      6: { cellWidth: 20, halign: 'center' }
+    }
+  });
+
+  const safeDate = periodLabel.replace(/[/\\?%*:|"<> ]/g, '_');
+  doc.save(`eliza_relatorio_sabores_${safeDate}.pdf`);
+}
+

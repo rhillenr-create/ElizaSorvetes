@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { usePos } from '../../context/PosContext';
 import { Sale, CashShift, SalesReport } from '../../types';
 import { ReceiptModal } from '../PDV/ReceiptModal';
@@ -6,7 +7,12 @@ import { ChangePaymentModal } from '../PDV/ChangePaymentModal';
 import { CashShiftModal, CashModalMode } from '../CashRegister/CashShiftModal';
 import { FlavorSalesReportView } from './FlavorSalesReportView';
 import { generateFlavorSalesReport } from '../../utils/flavorReportHelper';
-import { exportSalesExtractToCsv } from '../../utils/reportGenerator';
+import { 
+  exportSalesExtractToExcel,
+  exportSalesExtractToPdf,
+  exportSalesExtractToCsv,
+  openSalesExtractPrintDocument
+} from '../../utils/salesExportHelper';
 import { 
   getBrazilDateString, 
   getBrazilMonthString, 
@@ -42,7 +48,8 @@ import {
   Filter,
   Layers,
   Clock,
-  Coins
+  Coins,
+  FileSpreadsheet
 } from 'lucide-react';
 
 export type PeriodFilter = 'todos' | 'hoje' | 'ontem' | 'ultimos_7_dias' | 'este_mes' | 'dia_especifico' | 'mes_especifico';
@@ -539,12 +546,50 @@ export const ReportsView: React.FC = () => {
             </button>
           )}
 
+          {/* Ações de Exportação e Impressão */}
+          <button
+            type="button"
+            id="btn-top-export-excel"
+            onClick={async () => {
+              try {
+                await exportSalesExtractToExcel(filteredSales, periodLabel);
+                showToast(`Extrato em Excel (.xlsx) baixado com sucesso (${filteredSales.length} vendas)!`);
+              } catch (e: any) {
+                showToast(e.message || 'Erro ao exportar Excel', 'error');
+              }
+            }}
+            className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+            title="Baixar extrato completo em planilha Excel (.xlsx) com abas de vendas e itens detalhados"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Excel (.xlsx)</span>
+          </button>
+
+          <button
+            type="button"
+            id="btn-top-export-pdf"
+            onClick={async () => {
+              try {
+                await exportSalesExtractToPdf(filteredSales, periodLabel);
+                showToast(`Extrato em PDF baixado com sucesso (${filteredSales.length} vendas)!`);
+              } catch (e: any) {
+                showToast(e.message || 'Erro ao exportar PDF', 'error');
+              }
+            }}
+            className="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+            title="Baixar extrato analítico em arquivo PDF oficial"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Baixar PDF</span>
+          </button>
+
           {/* Imprimir Relatório */}
           <button
             type="button"
             id="btn-print-report"
             onClick={handlePrintReport}
             className="px-3 py-2 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+            title="Imprimir relatório / Salvar como PDF pelo navegador"
           >
             <Printer className="w-3.5 h-3.5 text-stone-600" />
             <span>Imprimir</span>
@@ -1059,16 +1104,38 @@ export const ReportsView: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    id="btn-export-sales-extract-csv"
-                    onClick={() => {
-                      exportSalesExtractToCsv(filteredSales, periodLabel);
-                      showToast(`Extrato com ${filteredSales.length} vendas exportado com sucesso para Excel/CSV!`);
+                    id="btn-export-sales-extract-excel"
+                    onClick={async () => {
+                      try {
+                        await exportSalesExtractToExcel(filteredSales, periodLabel);
+                        showToast(`Extrato em Excel (.xlsx) baixado com sucesso (${filteredSales.length} vendas)!`);
+                      } catch (e: any) {
+                        showToast(e.message || 'Erro ao exportar Excel', 'error');
+                      }
                     }}
                     className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                    title="Baixar extrato completo de vendas em CSV compatível com Excel"
+                    title="Baixar extrato completo de vendas em planilha Excel (.xlsx) com abas de vendas e itens detalhados"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Exportar Extrato (Excel/CSV)</span>
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>Exportar Excel (.xlsx)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="btn-export-sales-extract-pdf"
+                    onClick={async () => {
+                      try {
+                        await exportSalesExtractToPdf(filteredSales, periodLabel);
+                        showToast(`Extrato em PDF baixado com sucesso (${filteredSales.length} vendas)!`);
+                      } catch (e: any) {
+                        showToast(e.message || 'Erro ao exportar PDF', 'error');
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    title="Baixar extrato analítico em arquivo PDF oficial para arquivamento ou envio"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Baixar PDF (.pdf)</span>
                   </button>
 
                   <button
@@ -1076,10 +1143,23 @@ export const ReportsView: React.FC = () => {
                     id="btn-print-sales-extract"
                     onClick={() => handlePrintReport()}
                     className="px-3 py-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                    title="Imprimir extrato de vendas deste período"
+                    title="Imprimir extrato de vendas deste período na impressora ou salvar via navegador"
                   >
                     <Printer className="w-3.5 h-3.5 text-stone-600" />
                     <span>Imprimir Extrato</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="btn-export-sales-extract-csv"
+                    onClick={() => {
+                      exportSalesExtractToCsv(filteredSales, periodLabel);
+                      showToast(`Extrato CSV exportado com sucesso!`);
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Baixar em formato CSV compatível com planilhas"
+                  >
+                    <span>CSV</span>
                   </button>
                 </div>
               )}
@@ -1116,8 +1196,18 @@ export const ReportsView: React.FC = () => {
                         <td className="py-3 px-4 text-stone-500 whitespace-nowrap">
                           {formatBrazilDateTime(sale.timestamp)}
                         </td>
-                        <td className="py-3 px-4 font-medium">
-                          {sale.customerName || 'Consumidor Final'}
+                        <td className="py-3 px-4 font-medium whitespace-nowrap">
+                          {sale.customerName && sale.customerName.trim() && sale.customerName.trim() !== 'Consumidor Final' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-800 font-bold border border-rose-200/80 text-xs shadow-2xs">
+                              <User className="w-3.5 h-3.5 text-rose-500" />
+                              <span>{sale.customerName.trim()}</span>
+                            </span>
+                          ) : (
+                            <span className="text-stone-400 text-xs flex items-center gap-1">
+                              <User className="w-3 h-3 text-stone-300" />
+                              <span>Consumidor Final</span>
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-4 max-w-xs">
                           <div className="space-y-0.5">
@@ -2086,6 +2176,116 @@ export const ReportsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Documento de Impressão Portado para #print-root para garantir que NUNCA saia em branco */}
+      {activeTab !== 'sabores' && typeof document !== 'undefined' && document.getElementById('print-root') && createPortal(
+        <div className="pos-reports-print">
+          {/* Cabeçalho */}
+          <div style={{ textAlign: 'center', borderBottom: '2.5px solid #be123c', paddingBottom: '8px', marginBottom: '12px' }}>
+            <h1 style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase', margin: 0, color: '#be123c' }}>
+              Eliza Sorvetes Artesanais
+            </h1>
+            <h2 style={{ fontSize: '13px', fontWeight: 700, margin: '2px 0 0 0', textTransform: 'uppercase', color: '#1f2937' }}>
+              Extrato Analítico & Relatório Geral de Vendas
+            </h2>
+            <p style={{ fontSize: '10.5px', margin: '4px 0 0 0', color: '#4b5563' }}>
+              <strong>Período Apurado:</strong> {periodLabel} &bull; <strong>Emissão:</strong> {new Date().toLocaleString('pt-BR')} &bull; <strong>Total:</strong> {filteredSales.length} vendas
+            </p>
+          </div>
+
+          {/* Resumo Executivo */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', background: '#f9fafb', border: '1px solid #e5e7eb', padding: '8px 12px', borderRadius: '6px', marginBottom: '12px', fontSize: '11px' }}>
+            <div>
+              <span style={{ color: '#6b7280', display: 'block', fontSize: '9px', textTransform: 'uppercase', fontWeight: 700 }}>Faturamento Total</span>
+              <strong style={{ fontSize: '14px', color: '#065f46' }}>R$ {totalRevenue.toFixed(2).replace('.', ',')}</strong>
+            </div>
+            <div>
+              <span style={{ color: '#6b7280', display: 'block', fontSize: '9px', textTransform: 'uppercase', fontWeight: 700 }}>Total de Vendas</span>
+              <strong style={{ fontSize: '14px' }}>{filteredSales.length} vendas</strong>
+            </div>
+            <div>
+              <span style={{ color: '#6b7280', display: 'block', fontSize: '9px', textTransform: 'uppercase', fontWeight: 700 }}>Itens Vendidos</span>
+              <strong style={{ fontSize: '14px' }}>{totalItemsSold} unidades</strong>
+            </div>
+            <div>
+              <span style={{ color: '#6b7280', display: 'block', fontSize: '9px', textTransform: 'uppercase', fontWeight: 700 }}>Ticket Médio</span>
+              <strong style={{ fontSize: '14px' }}>R$ {(filteredSales.length > 0 ? totalRevenue / filteredSales.length : 0).toFixed(2).replace('.', ',')}</strong>
+            </div>
+          </div>
+
+          {/* Tabela de Vendas com Cliente e O Que Foi Vendido */}
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: '90px' }}>Data / Hora</th>
+                <th style={{ width: '120px' }}>ID Venda</th>
+                <th style={{ width: '130px' }}>Cliente</th>
+                <th>O Que Foi Vendido (Produtos & Sabores)</th>
+                <th style={{ width: '35px', textAlign: 'center' }}>Qtd</th>
+                <th style={{ width: '90px' }}>Pagamento</th>
+                <th style={{ width: '80px', textAlign: 'right' }}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredSales.map((sale) => {
+                const customer = (sale.customerName && sale.customerName.trim()) 
+                  ? sale.customerName.trim() 
+                  : 'Consumidor Final';
+                const itemsCount = (sale.items || []).reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
+                const total = Number(sale.total) || 0;
+
+                return (
+                  <tr key={sale.id}>
+                    <td style={{ whiteSpace: 'nowrap' }}>{formatBrazilDateTime(sale.timestamp)}</td>
+                    <td style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{sale.id}</td>
+                    <td className="customer-col" style={{ fontWeight: 'bold' }}>{customer}</td>
+                    <td>
+                      {(sale.items || []).map((it, idx) => {
+                        const q = it.quantity || 1;
+                        const flvs = it.selectedFlavors?.length ? ` (${it.selectedFlavors.join(', ')})` : '';
+                        const cont = it.container ? ` [${it.container === 'casquinha' ? 'Casquinha' : 'Copinho'}]` : '';
+                        return (
+                          <div key={idx} style={{ marginBottom: '2px' }}>
+                            <strong>{q}x</strong> {it.productName}{cont}{flvs}
+                          </div>
+                        );
+                      })}
+                    </td>
+                    <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{itemsCount}</td>
+                    <td>
+                      {sale.paymentMethod === 'dinheiro' ? 'Dinheiro' :
+                       sale.paymentMethod === 'pix' ? 'Pix' :
+                       sale.paymentMethod === 'cartao_debito' ? 'Débito' :
+                       sale.paymentMethod === 'cartao_credito' ? 'Crédito' : sale.paymentMethod}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#065f46' }}>
+                      R$ {total.toFixed(2).replace('.', ',')}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{ background: '#f3f4f6', fontWeight: 'bold' }}>
+                <td colSpan={3}>TOTAL GERAL DO PERÍODO</td>
+                <td>{filteredSales.length} vendas registradas</td>
+                <td style={{ textAlign: 'center' }}>{totalItemsSold}</td>
+                <td>-</td>
+                <td style={{ textAlign: 'right', color: '#065f46', fontSize: '11px' }}>
+                  R$ {totalRevenue.toFixed(2).replace('.', ',')}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+
+          {/* Rodapé institucional */}
+          <div style={{ marginTop: '16px', textAlign: 'center', borderTop: '1px solid #e5e7eb', paddingTop: '8px', fontSize: '9px', color: '#9ca3af' }}>
+            Eliza Sorvetes Artesanais • Sistema PDV e Gestão • Documento emitido em {new Date().toLocaleString('pt-BR')}
+          </div>
+        </div>,
+        document.getElementById('print-root')!
+      )}
+
     </div>
   );
 };

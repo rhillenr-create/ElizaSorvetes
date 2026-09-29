@@ -423,94 +423,11 @@ export function normalizeCashShift(raw: any): CashShift {
   };
 }
 
-/**
- * Exporta o extrato analítico de vendas completo para planilha CSV compatível com Excel
- */
-export function exportSalesExtractToCsv(
-  sales: Sale[],
-  periodLabel = 'Período Completo'
-): void {
-  const headers = [
-    'ID Venda',
-    'Data / Hora',
-    'Cliente',
-    'Itens & Sabores Detalhados',
-    'Quantidade de Itens',
-    'Forma de Pagamento',
-    'Subtotal (R$)',
-    'Desconto (R$)',
-    'Valor Total (R$)',
-    'Operador / Caixa',
-    'Turno de Caixa'
-  ];
+export {
+  exportSalesExtractToExcel,
+  exportSalesExtractToPdf,
+  exportSalesExtractToCsv,
+  openSalesExtractPrintDocument,
+  formatSaleItemsDescription
+} from './salesExportHelper';
 
-  let totalRevenue = 0;
-  let totalItemsCount = 0;
-
-  const rows = sales.map((sale) => {
-    totalRevenue += Number(sale.total) || 0;
-    const itemsCount = (sale.items || []).reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
-    totalItemsCount += itemsCount;
-
-    const itemsDesc = (sale.items || []).map((it) => {
-      const q = it.quantity || 1;
-      const flvs = it.selectedFlavors?.length ? ` (${it.selectedFlavors.join(', ')})` : '';
-      const cont = it.container ? ` [${it.container === 'casquinha' ? 'Casquinha' : 'Copinho'}]` : '';
-      return `${q}x ${it.productName}${cont}${flvs}`;
-    }).join('; ');
-
-    const dateFormatted = formatBrazilDateTime(sale.timestamp);
-
-    let paymentLabel: string = sale.paymentMethod;
-    if (sale.paymentMethod === 'dinheiro') paymentLabel = 'Dinheiro';
-    else if (sale.paymentMethod === 'pix') paymentLabel = 'Pix';
-    else if (sale.paymentMethod === 'cartao_debito') paymentLabel = 'Cartão Débito';
-    else if (sale.paymentMethod === 'cartao_credito') paymentLabel = 'Cartão Crédito';
-
-    return [
-      sale.id,
-      dateFormatted,
-      `"${(sale.customerName || 'Consumidor Final').replace(/"/g, '""')}"`,
-      `"${itemsDesc.replace(/"/g, '""')}"`,
-      itemsCount,
-      paymentLabel,
-      (Number(sale.subtotal) || Number(sale.total) || 0).toFixed(2).replace('.', ','),
-      (Number(sale.discount) || 0).toFixed(2).replace('.', ','),
-      (Number(sale.total) || 0).toFixed(2).replace('.', ','),
-      `"${(sale.cashierName || 'Eliza').replace(/"/g, '""')}"`,
-      sale.shiftId || '-'
-    ];
-  });
-
-  const metaLines = [
-    ['ELIZA SORVETES - EXTRATO COMPLETO DE VENDAS'],
-    [`Período Apurado: ${periodLabel}`],
-    [`Data de Emissão: ${new Date().toLocaleString('pt-BR')}`],
-    [''],
-    ['RESUMO DO EXTRATO'],
-    [`Total de Vendas: ${sales.length} vendas`],
-    [`Total de Produtos / Itens: ${totalItemsCount} itens`],
-    [`Faturamento Total: R$ ${totalRevenue.toFixed(2).replace('.', ',')}`],
-    [''],
-    ['DETALHAMENTO DAS VENDAS']
-  ];
-
-  const csvContent =
-    '\uFEFF' +
-    metaLines.map((line) => line.join(';')).join('\r\n') +
-    '\r\n' +
-    headers.join(';') +
-    '\r\n' +
-    rows.map((row) => row.join(';')).join('\r\n');
-
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  const safeDate = periodLabel.replace(/[/\\?%*:|"<> ]/g, '_');
-  link.setAttribute('href', url);
-  link.setAttribute('download', `eliza_extrato_vendas_${safeDate}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
