@@ -1,15 +1,18 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { usePos } from '../../context/PosContext';
 import { Sale, CashShift, SalesReport } from '../../types';
 import { ReceiptModal } from '../PDV/ReceiptModal';
 import { ChangePaymentModal } from '../PDV/ChangePaymentModal';
 import { CashShiftModal, CashModalMode } from '../CashRegister/CashShiftModal';
+import { FlavorSalesReportView } from './FlavorSalesReportView';
+import { generateFlavorSalesReport } from '../../utils/flavorReportHelper';
 import { 
   getBrazilDateString, 
   getBrazilMonthString, 
   getBrazilYesterdayDateString, 
   formatBrazilDateTime, 
-  formatBrazilTime 
+  formatBrazilTime,
+  formatBrazilDateDisplay
 } from '../../utils/dateUtils';
 import { 
   DollarSign, 
@@ -40,7 +43,7 @@ import {
   Coins
 } from 'lucide-react';
 
-export type PeriodFilter = 'todos' | 'hoje' | 'ontem' | 'este_mes' | 'dia_especifico' | 'mes_especifico';
+export type PeriodFilter = 'todos' | 'hoje' | 'ontem' | 'ultimos_7_dias' | 'este_mes' | 'dia_especifico' | 'mes_especifico';
 export type PaymentFilter = 'todos' | 'dinheiro' | 'pix' | 'cartao_debito' | 'cartao_credito';
 
 // Safe helper to extract payment breakdown without throwing TypeError
@@ -68,6 +71,8 @@ const getSafeReportPayments = (report?: SalesReport | null) => {
 export const ReportsView: React.FC = () => {
   const { 
     sales, 
+    products,
+    stock,
     deleteSale, 
     deleteAllSales,
     syncAllCatalogToDatabase,
@@ -82,14 +87,52 @@ export const ReportsView: React.FC = () => {
   } = usePos();
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'vendas' | 'caixa' | 'relatorios_banco'>('vendas');
+  const [activeTab, setActiveTab] = useState<'vendas' | 'sabores' | 'caixa' | 'relatorios_banco'>('vendas');
   const [selectedReportForView, setSelectedReportForView] = useState<SalesReport | null>(null);
 
   // Filters state with Brazil/Brasília timezone precision
-  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('hoje');
   const [todayStr, setTodayStr] = useState<string>(() => getBrazilDateString());
   const [currentMonthStr, setCurrentMonthStr] = useState<string>(() => getBrazilMonthString());
   const [yesterdayStr, setYesterdayStr] = useState<string>(() => getBrazilYesterdayDateString());
+
+  // Contagens rápidas por período para transparência total
+  const salesCountHoje = useMemo(() => sales.filter((s) => getBrazilDateString(s.timestamp) === todayStr).length, [sales, todayStr]);
+  const salesCountOntem = useMemo(() => sales.filter((s) => getBrazilDateString(s.timestamp) === yesterdayStr).length, [sales, yesterdayStr]);
+  const revenueOntem = useMemo(() => sales.filter((s) => getBrazilDateString(s.timestamp) === yesterdayStr).reduce((sum, s) => sum + s.total, 0), [sales, yesterdayStr]);
+
+  const salesCount7Dias = useMemo(() => {
+    const nowTs = Date.now();
+    return sales.filter((s) => {
+      const saleTs = new Date(s.timestamp).getTime();
+      const diff = (nowTs - saleTs) / (1000 * 60 * 60 * 24);
+      return diff >= 0 && diff <= 7;
+    }).length;
+  }, [sales]);
+
+  const salesCountEsteMes = useMemo(() => sales.filter((s) => getBrazilMonthString(s.timestamp) === currentMonthStr).length, [sales, currentMonthStr]);
+
+  // Se o dia de hoje ainda não tiver vendas registradas mas ontem tiver, inicializa com 'ontem'
+  const userSelectedPeriodRef = useRef<boolean>(false);
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>(() => {
+    const todaySalesExist = sales.some((s) => getBrazilDateString(s.timestamp) === getBrazilDateString());
+    if (!todaySalesExist && sales.some((s) => getBrazilDateString(s.timestamp) === getBrazilYesterdayDateString())) {
+      return 'ontem';
+    }
+    return 'hoje';
+  });
+
+  // Atualização automática para 'ontem' quando as vendas chegam do Firestore caso hoje esteja sem vendas
+  useEffect(() => {
+    if (userSelectedPeriodRef.current) return;
+    if (sales.length === 0) return;
+
+    const countHoje = sales.filter((s) => getBrazilDateString(s.timestamp) === todayStr).length;
+    const countOntem = sales.filter((s) => getBrazilDateString(s.timestamp) === yesterdayStr).length;
+
+    if (countHoje === 0 && countOntem > 0 && periodFilter === 'hoje') {
+      setPeriodFilter('ontem');
+    }
+  }, [sales, todayStr, yesterdayStr, periodFilter]);
 
   // Automatically update todayStr at 00:00:00 midnight without requiring page refresh
   useEffect(() => {
@@ -221,6 +264,12 @@ export const ReportsView: React.FC = () => {
       if (periodFilter === 'este_mes' && sMonth !== currentMonthStr) return false;
       if (periodFilter === 'dia_especifico' && sDate !== selectedDate) return false;
       if (periodFilter === 'mes_especifico' && sMonth !== selectedMonth) return false;
+      if (periodFilter === 'ultimos_7_dias') {
+        const saleTs = new Date(s.timestamp).getTime();
+        const nowTs = Date.now();
+        const diffDays = (nowTs - saleTs) / (1000 * 60 * 60 * 24);
+        if (diffDays < 0 || diffDays > 7) return false;
+      }
 
       // Payment Filter
       if (paymentFilter !== 'todos' && s.paymentMethod !== paymentFilter) return false;
@@ -277,23 +326,21 @@ export const ReportsView: React.FC = () => {
     return map;
   }, [filteredSales]);
 
-  // Top Flavors Ranking for filtered sales
+  // Top Flavors Ranking for filtered sales (usa gerador analítico unificado para precisão exata)
+  const flavorReport = useMemo(() => {
+    return generateFlavorSalesReport(filteredSales, products, stock, { includeZeroSales: false });
+  }, [filteredSales, products, stock]);
+
   const topFlavors = useMemo(() => {
-    const flavorCounts: Record<string, number> = {};
-
-    filteredSales.forEach((sale) => {
-      sale.items.forEach((item) => {
-        item.selectedFlavors.forEach((flavor) => {
-          flavorCounts[flavor] = (flavorCounts[flavor] || 0) + item.quantity;
-        });
-      });
-    });
-
-    return Object.entries(flavorCounts)
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 6);
-  }, [filteredSales]);
+    return flavorReport.consolidatedFlavors.slice(0, 8).map((f) => ({
+      id: f.id,
+      name: f.name,
+      count: f.totalQuantity,
+      categoryDetail: f.categoryDetail,
+      revenue: f.totalRevenue,
+      color: f.color
+    }));
+  }, [flavorReport]);
 
   const getMethodBadge = (method: string) => {
     switch (method) {
@@ -328,10 +375,11 @@ export const ReportsView: React.FC = () => {
 
   const getPeriodLabel = () => {
     switch (periodFilter) {
-      case 'hoje': return `Hoje (${todayStr.split('-').reverse().join('/')})`;
-      case 'ontem': return 'Ontem';
+      case 'hoje': return `Hoje (${formatBrazilDateDisplay(todayStr)})`;
+      case 'ontem': return `Ontem (${formatBrazilDateDisplay(yesterdayStr)})`;
+      case 'ultimos_7_dias': return 'Últimos 7 Dias';
       case 'este_mes': return `Este Mês (${currentMonthStr.split('-').reverse().join('/')})`;
-      case 'dia_especifico': return `Dia: ${selectedDate.split('-').reverse().join('/')}`;
+      case 'dia_especifico': return `Dia: ${formatBrazilDateDisplay(selectedDate)}`;
       case 'mes_especifico': return `Mês: ${selectedMonth.split('-').reverse().join('/')}`;
       case 'todos': return 'Todas as Vendas Registradas';
     }
@@ -544,6 +592,23 @@ export const ReportsView: React.FC = () => {
 
         <button
           type="button"
+          id="tab-sabores-btn"
+          onClick={() => setActiveTab('sabores')}
+          className={`pb-3 px-4 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap ${
+            activeTab === 'sabores'
+              ? 'border-rose-500 text-rose-700'
+              : 'border-transparent text-stone-500 hover:text-stone-800'
+          }`}
+        >
+          <span>🍦</span>
+          <span>Por Sabor (Sorvete & Picolé)</span>
+          <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold border border-rose-200">
+            Relatório Completo
+          </span>
+        </button>
+
+        <button
+          type="button"
           id="tab-caixa-btn"
           onClick={() => setActiveTab('caixa')}
           className={`pb-3 px-4 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap ${
@@ -579,6 +644,30 @@ export const ReportsView: React.FC = () => {
       {/* ========================================================================= */}
       {activeTab === 'vendas' && (
         <div className="space-y-5 animate-in fade-in duration-150">
+          {/* Informative banner when today has no sales yet */}
+          {salesCountHoje === 0 && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span className="text-xs">
+                  O dia de hoje (<strong>{formatBrazilDateDisplay(todayStr)}</strong>) ainda não possui novas vendas registradas.
+                  {salesCountOntem > 0 && (
+                    <span> Vendas do último turno concluído em <strong>{formatBrazilDateDisplay(yesterdayStr)}</strong>: <strong>{salesCountOntem} vendas</strong> • <strong className="text-emerald-800">R$ {revenueOntem.toFixed(2).replace('.', ',')}</strong>.</span>
+                  )}
+                </span>
+              </div>
+              {periodFilter !== 'ontem' && salesCountOntem > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPeriodFilter('ontem')}
+                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs cursor-pointer shrink-0 transition-colors shadow-2xs"
+                >
+                  Ver Vendas de Ontem ({formatBrazilDateDisplay(yesterdayStr)})
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Period & Payment Filters Bar */}
           <div className="bg-white rounded-2xl p-4 border border-stone-200 shadow-xs space-y-3">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
@@ -588,24 +677,35 @@ export const ReportsView: React.FC = () => {
                   <Filter className="w-3.5 h-3.5" /> Período:
                 </span>
                 {[
-                  { id: 'hoje', label: 'Hoje' },
-                  { id: 'ontem', label: 'Ontem' },
-                  { id: 'este_mes', label: 'Este Mês' },
+                  { id: 'hoje', label: `Hoje (${formatBrazilDateDisplay(todayStr).slice(0, 5)})`, count: salesCountHoje },
+                  { id: 'ontem', label: `Ontem (${formatBrazilDateDisplay(yesterdayStr).slice(0, 5)})`, count: salesCountOntem },
+                  { id: 'ultimos_7_dias', label: 'Últimos 7 Dias', count: salesCount7Dias },
+                  { id: 'este_mes', label: 'Este Mês', count: salesCountEsteMes },
                   { id: 'dia_especifico', label: 'Dia Específico' },
                   { id: 'mes_especifico', label: 'Mês Específico' },
-                  { id: 'todos', label: 'Todas' },
+                  { id: 'todos', label: 'Todas as Vendas', count: sales.length },
                 ].map((p) => (
                   <button
                     type="button"
                     key={p.id}
-                    onClick={() => setPeriodFilter(p.id as PeriodFilter)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    onClick={() => {
+                      userSelectedPeriodRef.current = true;
+                      setPeriodFilter(p.id as PeriodFilter);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                       periodFilter === p.id
                         ? 'bg-rose-500 text-white shadow-xs'
                         : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
                     }`}
                   >
-                    {p.label}
+                    <span>{p.label}</span>
+                    {p.count !== undefined && (
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                        periodFilter === p.id ? 'bg-white/25 text-white' : 'bg-stone-200 text-stone-700'
+                      }`}>
+                        {p.count}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -769,7 +869,9 @@ export const ReportsView: React.FC = () => {
                 {totalItemsSold}
               </div>
               <span className="text-[10px] text-stone-400 mt-1 inline-block">
-                Sorvetes, picolés e bebidas
+                {flavorReport.totalIceCreamSold > 0 || flavorReport.totalPopsicleSold > 0
+                  ? `${flavorReport.totalIceCreamSold} bolas sorvete • ${flavorReport.totalPopsicleSold} picolés`
+                  : 'Sorvetes, picolés e bebidas'}
               </span>
             </div>
           </div>
@@ -848,10 +950,21 @@ export const ReportsView: React.FC = () => {
 
             {/* Sabores Mais Vendidos no Período */}
             <div className="bg-white rounded-3xl p-5 border border-stone-200/80 shadow-xs space-y-3">
-              <h3 className="text-sm font-bold text-stone-800 flex items-center gap-2">
-                <ShoppingBag className="w-4 h-4 text-amber-500" />
-                <span>Sabores Mais Vendidos no Período</span>
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-stone-800 flex items-center gap-2">
+                  <ShoppingBag className="w-4 h-4 text-amber-500" />
+                  <span>Sabores Mais Vendidos no Período</span>
+                </h3>
+                <button
+                  type="button"
+                  id="btn-goto-flavor-report"
+                  onClick={() => setActiveTab('sabores')}
+                  className="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                  title="Abrir relatório analítico completo de sabores de sorvete e picolé"
+                >
+                  <span>Relatório Completo por Sabor →</span>
+                </button>
+              </div>
 
               {topFlavors.length === 0 ? (
                 <div className="py-8 text-center text-xs text-stone-400">
@@ -863,17 +976,27 @@ export const ReportsView: React.FC = () => {
                     const maxCount = topFlavors[0]?.count || 1;
                     const percentage = Math.round((item.count / maxCount) * 100);
                     return (
-                      <div key={item.name} className="space-y-1">
+                      <div key={item.id} className="space-y-1">
                         <div className="flex items-center justify-between text-xs">
-                          <span className="font-semibold text-stone-700 flex items-center gap-1.5">
-                            <span className="w-4 h-4 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold flex items-center justify-center">
+                          <span className="font-semibold text-stone-700 flex items-center gap-1.5 truncate">
+                            <span className="w-4 h-4 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold flex items-center justify-center shrink-0">
                               {idx + 1}
                             </span>
-                            {item.name}
+                            <span className="truncate">{item.name}</span>
+                            {item.categoryDetail && (
+                              <span className="text-[10px] text-stone-400 font-normal truncate hidden sm:inline">
+                                ({item.categoryDetail})
+                              </span>
+                            )}
                           </span>
-                          <span className="font-bold text-stone-800 font-mono">
-                            {item.count} un.
-                          </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[11px] text-stone-400 font-mono hidden xs:inline">
+                              R$ {item.revenue.toFixed(2).replace('.', ',')}
+                            </span>
+                            <span className="font-bold text-stone-800 font-mono">
+                              {item.count} un.
+                            </span>
+                          </div>
                         </div>
                         <div className="w-full bg-stone-100 h-2 rounded-full overflow-hidden">
                           <div
@@ -1015,6 +1138,13 @@ export const ReportsView: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 1.5: RELATÓRIO COMPLETO DE VENDAS POR SABOR (SORVETES & PICOLÉS)     */}
+      {/* ========================================================================= */}
+      {activeTab === 'sabores' && (
+        <FlavorSalesReportView />
       )}
 
       {/* ========================================================================= */}

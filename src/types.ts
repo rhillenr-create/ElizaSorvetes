@@ -165,4 +165,41 @@ export interface SalesReport {
   notes?: string;
 }
 
+export interface FlavorSaleReportItem {
+  id: string;
+  name: string;
+  category: 'sorvete' | 'picole' | 'sundae';
+  categoryLabel: string;
+  quantitySold: number;
+  totalRevenue: number;
+  averagePrice: number;
+  salesCount: number;
+  percentageOfCategory: number;
+  percentageOfTotal: number;
+  casquinhaCount: number;
+  copinhoCount: number;
+  currentStock?: number;
+  stockUnit?: string;
+  minStock?: number;
+  stockStatus: 'normal' | 'baixo' | 'zerado' | 'sem_estoque_cadastrado';
+  color?: string;
+  isRegional?: boolean;
+  isNutella?: boolean;
+  rank?: number;
+}
+
+export interface ConsolidatedFlavorRanking {
+  id: string;
+  name: string;
+  totalQuantity: number;
+  totalRevenue: number;
+  iceCreamQuantity: number;
+  popsicleQuantity: number;
+  color?: string;
+  categoryDetail: string;
+  isRegional?: boolean;
+  isNutella?: boolean;
+  rank?: number;
+}
+
 

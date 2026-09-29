@@ -17,6 +17,12 @@ export function getBrazilDateString(dateInput?: Date | string | number | null): 
   if (!dateInput) {
     dateInput = new Date();
   }
+
+  // Se já for uma string YYYY-MM-DD pura, retorna diretamente sem reinterpretar em UTC
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+    return dateInput.trim();
+  }
+
   const date = typeof dateInput === 'string' || typeof dateInput === 'number'
     ? new Date(dateInput)
     : dateInput;
@@ -40,6 +46,9 @@ export function getBrazilDateString(dateInput?: Date | string | number | null): 
  * Retorna o mês no formato YYYY-MM considerando o fuso horário de Brasília.
  */
 export function getBrazilMonthString(dateInput?: Date | string | number | null): string {
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}$/.test(dateInput.trim())) {
+    return dateInput.trim();
+  }
   const dateStr = getBrazilDateString(dateInput);
   return dateStr.slice(0, 7);
 }
@@ -53,11 +62,11 @@ export function getBrazilYesterdayDateString(todayInput?: string): string {
   if (parts.length !== 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) {
     return '';
   }
-  // Subtrai exatamente 1 dia na data local
-  const prev = new Date(parts[0], parts[1] - 1, parts[2] - 1);
-  const y = prev.getFullYear();
-  const m = String(prev.getMonth() + 1).padStart(2, '0');
-  const d = String(prev.getDate()).padStart(2, '0');
+  // Subtrai exatamente 1 dia usando UTC seguro ao meio-dia para evitar deslocamento de fuso
+  const prev = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] - 1, 12, 0, 0));
+  const y = prev.getUTCFullYear();
+  const m = String(prev.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(prev.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
 
@@ -65,6 +74,14 @@ export function getBrazilYesterdayDateString(todayInput?: string): string {
  * Formata uma data no formato brasileiro DD/MM/YYYY
  */
 export function formatBrazilDateDisplay(dateInput?: Date | string | number | null): string {
+  if (!dateInput) return '';
+
+  // Se já for YYYY-MM-DD pura, formata diretamente sem risco de deslocar 1 dia
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+    const [year, month, day] = dateInput.trim().split('-');
+    return `${day}/${month}/${year}`;
+  }
+
   const ymd = getBrazilDateString(dateInput);
   if (!ymd) return '';
   const [year, month, day] = ymd.split('-');

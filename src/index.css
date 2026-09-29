@@ -137,4 +137,45 @@
   #print-root .pos-receipt-print.print-size-xlarge .customer-name-large {
     font-size: 28px !important;
   }
+
+  /* Full Flavor Sales Report for Print */
+  #print-root .pos-flavor-report-print {
+    display: block !important;
+    position: static !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 8mm 10mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: none !important;
+    box-shadow: none !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    line-height: 1.3 !important;
+  }
+
+  #print-root .pos-flavor-report-print table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-top: 6px !important;
+    margin-bottom: 12px !important;
+    font-size: 11px !important;
+  }
+
+  #print-root .pos-flavor-report-print th,
+  #print-root .pos-flavor-report-print td {
+    border: 1px solid #d1d5db !important;
+    padding: 4px 6px !important;
+    text-align: left !important;
+  }
+
+  #print-root .pos-flavor-report-print th {
+    background-color: #f3f4f6 !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    font-size: 10px !important;
+  }
 }
