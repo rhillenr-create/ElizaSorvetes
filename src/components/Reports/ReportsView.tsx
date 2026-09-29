@@ -6,6 +6,7 @@ import { ChangePaymentModal } from '../PDV/ChangePaymentModal';
 import { CashShiftModal, CashModalMode } from '../CashRegister/CashShiftModal';
 import { FlavorSalesReportView } from './FlavorSalesReportView';
 import { generateFlavorSalesReport } from '../../utils/flavorReportHelper';
+import { exportSalesExtractToCsv } from '../../utils/reportGenerator';
 import { 
   getBrazilDateString, 
   getBrazilMonthString, 
@@ -32,6 +33,7 @@ import {
   CheckCircle2,
   X,
   Printer,
+  Download,
   Lock,
   Unlock,
   ArrowDownRight,
@@ -291,6 +293,32 @@ export const ReportsView: React.FC = () => {
       return true;
     });
   }, [sales, periodFilter, selectedDate, selectedMonth, paymentFilter, searchTerm, todayStr, currentMonthStr, yesterdayStr]);
+
+  // Rótulo amigável do período para o extrato e relatórios
+  const periodLabel = useMemo(() => {
+    switch (periodFilter) {
+      case 'hoje':
+        return `Hoje (${formatBrazilDateDisplay(todayStr)})`;
+      case 'ontem':
+        return `Ontem (${formatBrazilDateDisplay(yesterdayStr)})`;
+      case 'ultimos_7_dias':
+        return 'Últimos 7 Dias';
+      case 'este_mes': {
+        const [y, m] = currentMonthStr.split('-');
+        return `Este Mês (${m}/${y})`;
+      }
+      case 'dia_especifico':
+        return `Dia ${formatBrazilDateDisplay(selectedDate)}`;
+      case 'mes_especifico': {
+        const [y, m] = selectedMonth.split('-');
+        return `Mês ${m}/${y}`;
+      }
+      case 'todos':
+        return 'Todas as Vendas (Histórico Completo)';
+      default:
+        return 'Período Selecionado';
+    }
+  }, [periodFilter, todayStr, yesterdayStr, currentMonthStr, selectedDate, selectedMonth]);
 
   // Financial Metrics of filtered sales
   const totalRevenue = useMemo(() => {
@@ -1014,15 +1042,47 @@ export const ReportsView: React.FC = () => {
 
           {/* Sales History Table */}
           <div className="bg-white rounded-3xl border border-stone-200/80 shadow-xs overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="p-4 sm:p-5 border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm sm:text-base font-bold text-stone-800">
-                  Histórico de Vendas ({filteredSales.length})
+                <h3 className="text-sm sm:text-base font-bold text-stone-800 flex items-center gap-2">
+                  <span>Histórico & Extrato de Vendas</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold border border-rose-200">
+                    {filteredSales.length} {filteredSales.length === 1 ? 'venda' : 'vendas'}
+                  </span>
                 </h3>
                 <p className="text-xs text-stone-500">
-                  Vendas do período com opção de visualização de cupom e cancelamento/exclusão
+                  Extrato detalhado do período filtrado ({periodLabel})
                 </p>
               </div>
+
+              {filteredSales.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    id="btn-export-sales-extract-csv"
+                    onClick={() => {
+                      exportSalesExtractToCsv(filteredSales, periodLabel);
+                      showToast(`Extrato com ${filteredSales.length} vendas exportado com sucesso para Excel/CSV!`);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    title="Baixar extrato completo de vendas em CSV compatível com Excel"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Exportar Extrato (Excel/CSV)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="btn-print-sales-extract"
+                    onClick={() => handlePrintReport()}
+                    className="px-3 py-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    title="Imprimir extrato de vendas deste período"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-stone-600" />
+                    <span>Imprimir Extrato</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {filteredSales.length === 0 ? (
