@@ -103,6 +103,83 @@
         "generatedBy": { "type": "string", "maxLength": 120 }
       },
       "required": ["id", "type", "periodDate", "totalRevenue", "totalSalesCount", "totalItemsSold", "averageTicket", "createdAt", "updatedAt"]
+    },
+    "TubPurchase": {
+      "title": "TubPurchase",
+      "description": "Ice cream tub and popsicle purchase log and batch entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "date": { "type": "string", "maxLength": 100 },
+        "timestamp": { "type": "string", "maxLength": 100 },
+        "type": { "type": "string", "enum": ["compra_setembro", "estoque_anterior", "compra_regular"] },
+        "tubsCount": { "type": "number" },
+        "volumePerTubLiters": { "type": "number" },
+        "estimatedScoopsPerTub": { "type": "number" },
+        "popsiclesCount": { "type": "number" },
+        "flavor": { "type": "string", "maxLength": 120 },
+        "supplier": { "type": "string", "maxLength": 120 },
+        "cost": { "type": "number" },
+        "lotNumber": { "type": "string", "maxLength": 100 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdBy": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["id", "date", "timestamp", "type", "tubsCount", "volumePerTubLiters", "estimatedScoopsPerTub", "createdBy", "createdAt"]
+    },
+    "StockConference": {
+      "title": "StockConference",
+      "description": "Physical stock count, theoretical balance, and scoop audit reconciliation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "date": { "type": "string", "maxLength": 100 },
+        "timestamp": { "type": "string", "maxLength": 100 },
+        "auditorName": { "type": "string", "maxLength": 120 },
+        "estimatedScoopsPerTub": { "type": "number" },
+        "tubsInitial": { "type": "number" },
+        "tubsPurchased": { "type": "number" },
+        "tubsSoldEquivalent": { "type": "number" },
+        "tubsTheoretical": { "type": "number" },
+        "tubsPhysicalCounted": { "type": "number" },
+        "tubsDifference": { "type": "number" },
+        "scoopsSold": { "type": "number" },
+        "scoopsEstimatedFromTubs": { "type": "number" },
+        "scoopsDifference": { "type": "number" },
+        "physicalTubsList": { "type": "array" },
+        "status": { "type": "string", "enum": ["conforme", "alerta_diferenca", "divergencia_a_conferir"] },
+        "investigationNotes": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["id", "date", "timestamp", "auditorName", "estimatedScoopsPerTub", "tubsTheoretical", "tubsPhysicalCounted", "tubsDifference", "status"]
+    },
+    "DailyClosureRecord": {
+      "title": "DailyClosureRecord",
+      "description": "Immutable daily closure snapshot containing sales, revenue, scoops, stock and purchases",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "date": { "type": "string", "maxLength": 100 },
+        "closedAt": { "type": "string", "maxLength": 100 },
+        "closedBy": { "type": "string", "maxLength": 120 },
+        "version": { "type": "number" },
+        "totalSalesCount": { "type": "number" },
+        "totalRevenue": { "type": "number" },
+        "paymentBreakdown": { "type": "object" },
+        "productsSold": { "type": "object" },
+        "bolasConsumidas": { "type": "number" },
+        "baldesEquivalentes": { "type": "number" },
+        "cascoes1BolaCount": { "type": "number" },
+        "cascoes2BolasCount": { "type": "number" },
+        "sundaesCount": { "type": "number" },
+        "picolesCount": { "type": "number" },
+        "comprasBaldes": { "type": "number" },
+        "comprasPicoles": { "type": "number" },
+        "estoqueInformado": { "type": "number" },
+        "estoqueTeorico": { "type": "number" },
+        "diferenca": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["id", "date", "closedAt", "closedBy", "version", "totalSalesCount", "totalRevenue", "bolasConsumidas"]
     }
   },
   "firestore": {
@@ -125,6 +202,18 @@
     "/sales_reports/{reportId}": {
       "schema": "SalesReport",
       "description": "Consolidated sales reports generated and stored automatically in Firestore"
+    },
+    "/tub_purchases/{purchaseId}": {
+      "schema": "TubPurchase",
+      "description": "Log of ice cream tub and popsicle purchases"
+    },
+    "/stock_conferences/{conferenceId}": {
+      "schema": "StockConference",
+      "description": "Audit records comparing physical stock of tubs against sales consumption"
+    },
+    "/daily_closures/{closureId}": {
+      "schema": "DailyClosureRecord",
+      "description": "Immutable daily closure records with complete sales and stock snapshots"
     }
   }
 }

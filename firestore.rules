@@ -39,6 +39,21 @@ service cloud.firestore {
     match /sales_reports/{reportId} {
       allow read, write: if isStaff();
     }
+
+    // Tub purchases (registro de compras de baldes e picolés)
+    match /tub_purchases/{purchaseId} {
+      allow read, write: if isStaff();
+    }
+
+    // Stock conferences (auditoria e conferência física de estoque)
+    match /stock_conferences/{conferenceId} {
+      allow read, write: if isStaff();
+    }
+
+    // Daily closure records (fechamentos diários imutáveis e auditáveis)
+    match /daily_closures/{closureId} {
+      allow read, write: if isStaff();
+    }
   }
 }
 
